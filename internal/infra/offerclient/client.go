@@ -11,6 +11,7 @@ import (
 
 	"github.com/davveo/order-hub/internal/application/port"
 	"github.com/davveo/order-hub/internal/domain"
+	"github.com/davveo/order-hub/internal/infra/httpx"
 )
 
 type Client struct {
@@ -24,7 +25,31 @@ func New(base, apiKey string) *Client {
 }
 
 func (c *Client) Quote(ctx context.Context, req port.QuoteRequest) (*port.QuoteResult, error) {
-	return post[port.QuoteResult](ctx, c, "/api/discount/v1/quotes", req)
+	var original int64
+	items := make([]map[string]any, 0, len(req.Items))
+	for _, it := range req.Items {
+		lineAmt := it.UnitPrice * it.Quantity
+		original += lineAmt
+		items = append(items, map[string]any{
+			"line_id": it.LineID, "object_type": it.ObjectType, "object_id": it.ObjectID,
+			"quantity": it.Quantity, "unit_price": it.UnitPrice, "amount": lineAmt, "attributes": it.Attributes,
+		})
+	}
+	body := map[string]any{
+		"tenant_id":  req.TenantID,
+		"channel":    req.Channel,
+		"auto_best":  req.AutoBest,
+		"coupon_ids": req.CouponIDs,
+		"subject": map[string]any{
+			"type": "user", "id": req.UserID, "attributes": req.Attributes,
+		},
+		"transaction": map[string]any{
+			"id": req.OrderID, "amount": original, "currency": req.Currency,
+		},
+		"items":   items,
+		"context": req.Context,
+	}
+	return post[port.QuoteResult](ctx, c, "/api/discount/v1/quotes", body)
 }
 
 func (c *Client) Reserve(ctx context.Context, quoteID, orderID, idemKey string) (*port.ReservationResult, error) {
@@ -79,11 +104,8 @@ func post[T any](ctx context.Context, c *Client, path string, payload any) (*T, 
 		return nil, err
 	}
 	defer resp.Body.Close()
-	if resp.StatusCode >= 300 {
-		return nil, fmt.Errorf("offerhub %s status %d", path, resp.StatusCode)
-	}
 	var out T
-	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+	if err := httpx.Decode(resp, &out); err != nil {
 		return nil, err
 	}
 	return &out, nil
@@ -97,14 +119,15 @@ func trim(s string) string {
 }
 
 type Mock struct {
-	mu    sync.Mutex
-	seq   int
+	mu     sync.Mutex
+	seq    int
 	quotes map[string]*port.QuoteResult
 	resv   map[string]string
+	renews map[string]int
 }
 
 func NewMock() *Mock {
-	return &Mock{quotes: map[string]*port.QuoteResult{}, resv: map[string]string{}}
+	return &Mock{quotes: map[string]*port.QuoteResult{}, resv: map[string]string{}, renews: map[string]int{}}
 }
 
 func (m *Mock) Quote(_ context.Context, req port.QuoteRequest) (*port.QuoteResult, error) {
@@ -115,9 +138,6 @@ func (m *Mock) Quote(_ context.Context, req port.QuoteRequest) (*port.QuoteResul
 	var discount int64
 	if len(req.CouponIDs) > 0 {
 		discount = original / 10
-		if discount > original {
-			discount = original
-		}
 	}
 	m.mu.Lock()
 	m.seq++
@@ -147,10 +167,7 @@ func (m *Mock) Quote(_ context.Context, req port.QuoteRequest) (*port.QuoteResul
 	}
 	if len(req.CouponIDs) > 0 {
 		res.Promotions = []domain.PromotionDetail{{
-			SourceType:     "coupon",
-			SourceID:       req.CouponIDs[0],
-			DiscountAmount: discount,
-			Allocations:    allocs,
+			SourceType: "coupon", SourceID: req.CouponIDs[0], DiscountAmount: discount, Allocations: allocs,
 		}}
 	}
 	m.mu.Lock()
@@ -186,5 +203,20 @@ func (m *Mock) Release(_ context.Context, reservationID, _, _ string) error {
 	return nil
 }
 
-func (m *Mock) Renew(context.Context, string, string, string) error { return nil }
+func (m *Mock) Renew(_ context.Context, reservationID, _, _ string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if _, ok := m.resv[reservationID]; !ok {
+		return domain.ErrOfferReserve
+	}
+	m.renews[reservationID]++
+	return nil
+}
+
 func (m *Mock) Reverse(context.Context, string, string, string) error { return nil }
+
+func (m *Mock) RenewCount(reservationID string) int {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.renews[reservationID]
+}

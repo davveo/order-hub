@@ -2,6 +2,7 @@ package application_test
 
 import (
 	"context"
+	"fmt"
 	"testing"
 	"time"
 
@@ -243,5 +244,170 @@ func TestLedgerInsufficientFailsBeforePersist(t *testing.T) {
 	}
 	if repo.Count() != 0 {
 		t.Fatal("must not persist order when freeze fails")
+	}
+}
+
+type commitOnceFail struct {
+	port.OfferClient
+	n int
+}
+
+func (c *commitOnceFail) Commit(ctx context.Context, reservationID, orderID, idemKey string) (string, error) {
+	c.n++
+	if c.n == 1 {
+		return "", fmt.Errorf("commit down")
+	}
+	return c.OfferClient.Commit(ctx, reservationID, orderID, idemKey)
+}
+
+func TestAfterPaidCompensationRetry(t *testing.T) {
+	ctx := context.Background()
+	scenes := domain.DefaultScenes()
+	repo := memory.NewOrderRepo()
+	offer := &commitOnceFail{OfferClient: offerclient.NewMock()}
+	ledger := ledgerclient.NewMock()
+	payAd := payment.NewMock()
+	fulfill := fulfillment.NewRegistry(scenes)
+	ids := &seqID{}
+	clk := clock.System{}
+	checkout := application.NewCheckoutService(scenes, repo, offer, ledger, payAd, fulfill, cache.NewPreviewStore(nil), ids, clk, cache.NewLocker(nil))
+	paySvc := application.NewPaymentService(scenes, repo, offer, ledger, payAd, fulfill, ids, clk)
+	ident := &port.Identity{UserID: "u_1", TenantID: "t1"}
+	created, err := checkout.Checkout(ctx, ident, application.CheckoutCmd{
+		ClientOrderID: "cli_comp", Scene: "mall_checkout", Items: mallItems(), IdempotencyKey: "k_comp",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	o, err := paySvc.OnPaymentCallback(ctx, application.PaymentCallback{
+		OrderID: created.OrderID, TenantID: ident.TenantID, Success: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if o.Status != domain.StatusCompensating {
+		t.Fatalf("want COMPENSATING got %s", o.Status)
+	}
+	w := application.NewCompensateWorker(repo, paySvc, offer, ledger, fulfill, clk)
+	n, err := w.Tick(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n != 1 {
+		t.Fatalf("compensated %d", n)
+	}
+	got, err := repo.FindByID(ctx, ident.TenantID, created.OrderID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Status != domain.StatusFulfilling {
+		t.Fatalf("status %s", got.Status)
+	}
+}
+
+func TestMixPayAndLineRefund(t *testing.T) {
+	ctx := context.Background()
+	preview, checkout, _, paySvc, _, _, ident := testHarness()
+	_, err := preview.Preview(ctx, ident, application.PreviewCmd{
+		Scene: "mall_checkout", Channel: "app", Items: mallItems(),
+		LedgerPay: &application.LedgerPay{AssetCode: "POINT", Amount: 500},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	created, err := checkout.Checkout(ctx, ident, application.CheckoutCmd{
+		ClientOrderID: "cli_mix", Scene: "mall_checkout", Channel: "app",
+		Items: mallItems(), LedgerPay: &application.LedgerPay{AssetCode: "POINT", Amount: 500},
+		IdempotencyKey: "k_mix",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if created.FreezeID == "" || created.PaymentIntent == nil {
+		t.Fatalf("mix should freeze and create channel intent: %+v", created)
+	}
+	o, err := paySvc.OnPaymentCallback(ctx, application.PaymentCallback{
+		OrderID: created.OrderID, TenantID: ident.TenantID, Success: true, PaidAmount: created.PaymentIntent.Amount,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if o.Amounts.LedgerPay != 500 || o.Amounts.ChannelPay != o.Amounts.Payable-500 {
+		t.Fatalf("mix amounts %+v", o.Amounts)
+	}
+}
+
+func TestLineRefund(t *testing.T) {
+	ctx := context.Background()
+	scenes := domain.DefaultScenes()
+	repo := memory.NewOrderRepo()
+	offer := offerclient.NewMock()
+	ledger := ledgerclient.NewMock()
+	payAd := payment.NewMock()
+	fulfill := fulfillment.NewRegistry(scenes)
+	ids := &seqID{}
+	clk := clock.System{}
+	checkout := application.NewCheckoutService(scenes, repo, offer, ledger, payAd, fulfill, cache.NewPreviewStore(nil), ids, clk, cache.NewLocker(nil))
+	paySvc := application.NewPaymentService(scenes, repo, offer, ledger, payAd, fulfill, ids, clk)
+	refundSvc := application.NewRefundService(repo, offer, ledger, payAd, ids, clk)
+	ident := &port.Identity{UserID: "u_1", TenantID: "t1"}
+	created, err := checkout.Checkout(ctx, ident, application.CheckoutCmd{
+		ClientOrderID: "cli_rf", Scene: "mall_checkout", Items: mallItems(), IdempotencyKey: "k_rf",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = paySvc.OnPaymentCallback(ctx, application.PaymentCallback{
+		OrderID: created.OrderID, TenantID: ident.TenantID, Success: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	rf, err := refundSvc.Refund(ctx, ident, created.OrderID, application.RefundCmd{
+		Lines: []domain.LineRefund{{LineID: "line_1", Amount: 1000}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rf.Amount != 1000 || len(rf.Lines) != 1 {
+		t.Fatalf("%+v", rf)
+	}
+	got, err := repo.FindByID(ctx, ident.TenantID, created.OrderID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Status != domain.StatusPartialRefunded || got.Amounts.Refunded != 1000 {
+		t.Fatalf("status %s refunded %d", got.Status, got.Amounts.Refunded)
+	}
+}
+
+func TestReservationRenew(t *testing.T) {
+	ctx := context.Background()
+	scenes := domain.DefaultScenes()
+	repo := memory.NewOrderRepo()
+	offer := offerclient.NewMock()
+	ledger := ledgerclient.NewMock()
+	payAd := payment.NewMock()
+	fulfill := fulfillment.NewRegistry(scenes)
+	ids := &seqID{}
+	clk := clock.System{}
+	checkout := application.NewCheckoutService(scenes, repo, offer, ledger, payAd, fulfill, cache.NewPreviewStore(nil), ids, clk, cache.NewLocker(nil))
+	renew := application.NewRenewService(repo, offer, clk)
+	ident := &port.Identity{UserID: "u_1", TenantID: "t1"}
+	created, err := checkout.Checkout(ctx, ident, application.CheckoutCmd{
+		ClientOrderID: "cli_rn", Scene: "mall_checkout", Items: mallItems(), IdempotencyKey: "k_rn",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	o, err := renew.Renew(ctx, ident, created.OrderID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if o.RenewCount != 1 {
+		t.Fatalf("renew_count %d", o.RenewCount)
+	}
+	if offer.RenewCount(created.ReservationID) != 1 {
+		t.Fatalf("offer renew %d", offer.RenewCount(created.ReservationID))
 	}
 }

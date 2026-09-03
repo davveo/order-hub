@@ -10,7 +10,7 @@ func NewRouter(h *Handlers, auth port.AuthClient) *gin.Engine {
 	r := gin.New()
 	r.Use(Recover(), gin.Logger(), RequestID())
 	r.GET("/healthz", Health)
-	r.GET("/readyz", Health)
+	r.GET("/readyz", h.Ready)
 
 	v1 := r.Group("/api/v1")
 	v1.Use(Auth(auth))
@@ -24,9 +24,12 @@ func NewRouter(h *Handlers, auth port.AuthClient) *gin.Engine {
 		v1.POST("/orders/:order_id/confirm-ledger", h.ConfirmLedger)
 		v1.POST("/orders/:order_id/complete", h.Complete)
 		v1.POST("/orders/:order_id/refunds", h.Refund)
+		v1.POST("/orders/:order_id/renew", h.Renew)
 	}
 
 	internal := r.Group("/internal/v1")
 	internal.POST("/orders/callbacks/payment", h.PaymentCallback)
+	internal.GET("/compensations", h.ListCompensations)
+	internal.POST("/compensations/:id/retry", h.RetryCompensation)
 	return r
 }

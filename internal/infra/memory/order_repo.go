@@ -16,7 +16,8 @@ type OrderRepo struct {
 	idem     map[string]*port.IdempotencyRecord
 	events   []port.OutboxRow
 	refunds  []domain.Refund
-	comp     int
+	tickets  []port.CompensationTicket
+	seq      int64
 	clientIx map[string]string
 }
 
@@ -235,11 +236,133 @@ func (r *OrderRepo) InsertRefund(_ context.Context, _ *domain.Order, refund doma
 	return nil
 }
 
-func (r *OrderRepo) InsertCompensation(_ context.Context, _, _, _ string) error {
+func (r *OrderRepo) InsertCompensation(_ context.Context, t port.CompensationTicket) error {
 	r.mu.Lock()
-	r.comp++
-	r.mu.Unlock()
+	defer r.mu.Unlock()
+	r.seq++
+	t.ID = r.seq
+	if t.Status == "" {
+		t.Status = "pending"
+	}
+	t.CreatedAt = time.Now()
+	r.tickets = append(r.tickets, t)
 	return nil
+}
+
+func (r *OrderRepo) ClaimCompensations(_ context.Context, now time.Time, limit int) ([]port.CompensationTicket, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	var out []port.CompensationTicket
+	for i := range r.tickets {
+		t := &r.tickets[i]
+		if t.Status != "pending" && t.Status != "running" {
+			continue
+		}
+		if t.NextRetry != nil && t.NextRetry.After(now) {
+			continue
+		}
+		t.Attempts++
+		t.Status = "running"
+		out = append(out, *t)
+		if len(out) >= limit {
+			break
+		}
+	}
+	return out, nil
+}
+
+func (r *OrderRepo) UpdateCompensation(_ context.Context, id int64, status, lastErr string, nextRetry *time.Time) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	for i := range r.tickets {
+		if r.tickets[i].ID == id {
+			r.tickets[i].Status = status
+			r.tickets[i].LastError = lastErr
+			r.tickets[i].NextRetry = nextRetry
+			return nil
+		}
+	}
+	return domain.ErrOrderNotFound
+}
+
+func (r *OrderRepo) ListCompensations(_ context.Context, status string, limit int) ([]port.CompensationTicket, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	var out []port.CompensationTicket
+	for i := len(r.tickets) - 1; i >= 0; i-- {
+		if status != "" && r.tickets[i].Status != status {
+			continue
+		}
+		out = append(out, r.tickets[i])
+		if len(out) >= limit {
+			break
+		}
+	}
+	return out, nil
+}
+
+func (r *OrderRepo) FindCompensation(_ context.Context, id int64) (*port.CompensationTicket, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	for i := range r.tickets {
+		if r.tickets[i].ID == id {
+			t := r.tickets[i]
+			return &t, nil
+		}
+	}
+	return nil, domain.ErrOrderNotFound
+}
+
+func (r *OrderRepo) ListPendingPayForRenew(_ context.Context, now time.Time, window time.Duration, maxRenew, limit int) ([]domain.Order, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	deadline := now.Add(window)
+	var out []domain.Order
+	for _, o := range r.orders {
+		if o.Status != domain.StatusPendingPay || o.Promotion.ReservationID == "" {
+			continue
+		}
+		if o.ExpireAt.Before(now) || o.ExpireAt.After(deadline) || o.RenewCount >= maxRenew {
+			continue
+		}
+		out = append(out, *clone(o))
+		if len(out) >= limit {
+			break
+		}
+	}
+	return out, nil
+}
+
+func (r *OrderRepo) BumpRenew(_ context.Context, tenantID, orderID string, expectedCount int) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	o, ok := r.orders[tenantID+"|"+orderID]
+	if !ok {
+		return domain.ErrOrderNotFound
+	}
+	if o.Status != domain.StatusPendingPay || o.RenewCount != expectedCount {
+		return domain.ErrVersionConflict
+	}
+	o.RenewCount++
+	return nil
+}
+
+func (r *OrderRepo) Count() int {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return len(r.orders)
+}
+
+func (r *OrderRepo) TicketCount() int {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	n := 0
+	for _, t := range r.tickets {
+		if t.Status == "pending" || t.Status == "running" {
+			n++
+		}
+	}
+	return n
 }
 
 func (r *OrderRepo) ListUnpublishedEvents(_ context.Context, limit int) ([]port.OutboxRow, error) {
@@ -262,10 +385,4 @@ func (r *OrderRepo) MarkEventPublished(_ context.Context, eventID string) error 
 	}
 	r.events = filtered
 	return nil
-}
-
-func (r *OrderRepo) Count() int {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	return len(r.orders)
 }

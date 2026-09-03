@@ -56,6 +56,9 @@ POST /internal/v1/orders/callbacks/payment
 
 纯积分场景 `point_mall` 下单后调用 `POST /api/v1/orders/{id}/confirm-ledger`。
 
+支付中续期：`POST /api/v1/orders/{id}/renew`。补偿工单：`GET /internal/v1/compensations`、`POST /internal/v1/compensations/{id}/retry`。Worker 会扫超时关单、Outbox、补偿和 reservation renew。
+
+
 ## API
 
 前缀 `/api/v1/orders`，响应 `{code,message,request_id,data}`。详见技术方案与 `api/openapi.yaml`。

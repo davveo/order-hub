@@ -292,6 +292,7 @@ func (r *OrderRepo) ListByBuyer(ctx context.Context, tenantID, buyerID string, s
 }
 
 func (r *OrderRepo) InsertRefund(ctx context.Context, o *domain.Order, refund domain.Refund, event domain.Event) error {
+	lines, _ := json.Marshal(refund.Lines)
 	return r.db.WithContext(ctx).Clauses(clause.OnConflict{DoNothing: true}).Create(&RefundPO{
 		RefundID:      refund.RefundID,
 		OrderID:       refund.OrderID,
@@ -302,18 +303,154 @@ func (r *OrderRepo) InsertRefund(ctx context.Context, o *domain.Order, refund do
 		Reason:        refund.Reason,
 		ChannelRefund: refund.ChannelRefund,
 		LedgerCredit:  refund.LedgerCredit,
+		LedgerAmount:  refund.LedgerAmount,
+		ChannelAmount: refund.ChannelAmount,
+		LinesJSON:     lines,
 		CreatedAt:     refund.CreatedAt,
 	}).Error
 }
 
-func (r *OrderRepo) InsertCompensation(ctx context.Context, kind, ref, payload string) error {
+func (r *OrderRepo) InsertCompensation(ctx context.Context, t port.CompensationTicket) error {
+	if t.Status == "" {
+		t.Status = "pending"
+	}
 	return r.db.WithContext(ctx).Create(&CompensationPO{
-		Kind:      kind,
-		Ref:       ref,
-		Payload:   payload,
-		Status:    "pending",
+		Kind:      t.Kind,
+		TenantID:  t.TenantID,
+		Ref:       t.Ref,
+		Payload:   t.Payload,
+		Status:    t.Status,
+		Attempts:  0,
 		CreatedAt: time.Now(),
 	}).Error
+}
+
+func (r *OrderRepo) ClaimCompensations(ctx context.Context, now time.Time, limit int) ([]port.CompensationTicket, error) {
+	if limit <= 0 {
+		limit = 50
+	}
+	var rows []CompensationPO
+	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		q := tx.Where("status = ? AND (next_retry_at IS NULL OR next_retry_at <= ?)", "pending", now).
+			Order("id").Limit(limit).
+			Clauses(clause.Locking{Strength: "UPDATE", Options: "SKIP LOCKED"})
+		if err := q.Find(&rows).Error; err != nil {
+			return err
+		}
+		ids := make([]int64, 0, len(rows))
+		for i := range rows {
+			ids = append(ids, rows[i].ID)
+			rows[i].Attempts++
+		}
+		if len(ids) == 0 {
+			return nil
+		}
+		return tx.Model(&CompensationPO{}).Where("id IN ?", ids).
+			Updates(map[string]any{"attempts": gorm.Expr("attempts + 1"), "status": "running"}).Error
+	})
+	if err != nil {
+		// 无事务锁时降级扫描
+		if e := r.db.WithContext(ctx).Where("status IN ? AND (next_retry_at IS NULL OR next_retry_at <= ?)", []string{"pending", "running"}, now).
+			Order("id").Limit(limit).Find(&rows).Error; e != nil {
+			return nil, e
+		}
+	}
+	out := make([]port.CompensationTicket, 0, len(rows))
+	for _, row := range rows {
+		out = append(out, poToComp(row))
+	}
+	return out, nil
+}
+
+func (r *OrderRepo) UpdateCompensation(ctx context.Context, id int64, status, lastErr string, nextRetry *time.Time) error {
+	updates := map[string]any{"status": status, "last_error": lastErr}
+	if nextRetry != nil {
+		updates["next_retry_at"] = nextRetry
+	}
+	if status == "done" || status == "failed" {
+		now := time.Now()
+		updates["done_at"] = &now
+	}
+	return r.db.WithContext(ctx).Model(&CompensationPO{}).Where("id = ?", id).Updates(updates).Error
+}
+
+func (r *OrderRepo) ListCompensations(ctx context.Context, status string, limit int) ([]port.CompensationTicket, error) {
+	if limit <= 0 {
+		limit = 50
+	}
+	q := r.db.WithContext(ctx).Order("id DESC").Limit(limit)
+	if status != "" {
+		q = q.Where("status = ?", status)
+	}
+	var rows []CompensationPO
+	if err := q.Find(&rows).Error; err != nil {
+		return nil, err
+	}
+	out := make([]port.CompensationTicket, 0, len(rows))
+	for _, row := range rows {
+		out = append(out, poToComp(row))
+	}
+	return out, nil
+}
+
+func (r *OrderRepo) FindCompensation(ctx context.Context, id int64) (*port.CompensationTicket, error) {
+	var row CompensationPO
+	if err := r.db.WithContext(ctx).First(&row, id).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, domain.ErrOrderNotFound
+		}
+		return nil, err
+	}
+	t := poToComp(row)
+	return &t, nil
+}
+
+func (r *OrderRepo) ListPendingPayForRenew(ctx context.Context, now time.Time, window time.Duration, maxRenew, limit int) ([]domain.Order, error) {
+	if limit <= 0 {
+		limit = 100
+	}
+	deadline := now.Add(window)
+	var pos []OrderPO
+	err := r.db.WithContext(ctx).
+		Where("status = ? AND reservation_id <> '' AND expire_at > ? AND expire_at <= ? AND renew_count < ?",
+			string(domain.StatusPendingPay), now, deadline, maxRenew).
+		Order("expire_at").Limit(limit).Find(&pos).Error
+	if err != nil {
+		return nil, err
+	}
+	out := make([]domain.Order, 0, len(pos))
+	for _, po := range pos {
+		out = append(out, *poToOrder(po, nil))
+	}
+	return out, nil
+}
+
+func (r *OrderRepo) BumpRenew(ctx context.Context, tenantID, orderID string, expectedCount int) error {
+	res := r.db.WithContext(ctx).Model(&OrderPO{}).
+		Where("tenant_id = ? AND order_id = ? AND status = ? AND renew_count = ?", tenantID, orderID, string(domain.StatusPendingPay), expectedCount).
+		Updates(map[string]any{"renew_count": gorm.Expr("renew_count + 1"), "updated_at": time.Now()})
+	if res.Error != nil {
+		return res.Error
+	}
+	if res.RowsAffected == 0 {
+		return domain.ErrVersionConflict
+	}
+	return nil
+}
+
+func poToComp(row CompensationPO) port.CompensationTicket {
+	return port.CompensationTicket{
+		ID:        row.ID,
+		Kind:      row.Kind,
+		TenantID:  row.TenantID,
+		Ref:       row.Ref,
+		Payload:   row.Payload,
+		Status:    row.Status,
+		Attempts:  row.Attempts,
+		LastError: row.LastError,
+		NextRetry: row.NextRetry,
+		CreatedAt: row.CreatedAt,
+	}
 }
 
 func (r *OrderRepo) ListUnpublishedEvents(ctx context.Context, limit int) ([]port.OutboxRow, error) {

@@ -4,13 +4,13 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"fmt"
 	"net/http"
 	"strings"
 	"time"
 
 	"github.com/davveo/order-hub/internal/application/port"
 	"github.com/davveo/order-hub/internal/domain"
+	"github.com/davveo/order-hub/internal/infra/httpx"
 )
 
 type Client struct {
@@ -39,18 +39,12 @@ func (c *Client) Introspect(ctx context.Context, token string) (*port.Identity, 
 		return nil, err
 	}
 	defer resp.Body.Close()
-	if resp.StatusCode == http.StatusUnauthorized {
-		return nil, domain.ErrUnauthorized
-	}
-	if resp.StatusCode >= 300 {
-		return nil, fmt.Errorf("auth introspect status %d", resp.StatusCode)
-	}
 	var out struct {
 		UserID     string         `json:"user_id"`
 		TenantID   string         `json:"tenant_id"`
 		Attributes map[string]any `json:"attributes"`
 	}
-	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+	if err := httpx.Decode(resp, &out); err != nil {
 		return nil, err
 	}
 	if out.UserID == "" {

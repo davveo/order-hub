@@ -34,6 +34,7 @@ type OrderPO struct {
 	PaymentIntentID string    `gorm:"column:payment_intent_id;size:64"`
 	PaymentChannel  string    `gorm:"column:payment_channel;size:32"`
 	ExpireAt        *time.Time `gorm:"column:expire_at;index:idx_orders_timeout,priority:2"`
+	RenewCount      int        `gorm:"column:renew_count"`
 	ContextJSON     []byte    `gorm:"column:context_json;type:jsonb"`
 	CreatedAt       time.Time `gorm:"column:created_at;index:idx_orders_buyer,priority:4"`
 	UpdatedAt       time.Time `gorm:"column:updated_at"`
@@ -123,20 +124,26 @@ type RefundPO struct {
 	Reason        string    `gorm:"column:reason;size:256"`
 	ChannelRefund bool      `gorm:"column:channel_refund"`
 	LedgerCredit  bool      `gorm:"column:ledger_credit"`
+	LedgerAmount  int64     `gorm:"column:ledger_amount"`
+	ChannelAmount int64     `gorm:"column:channel_amount"`
+	LinesJSON     []byte    `gorm:"column:lines_json;type:jsonb"`
 	CreatedAt     time.Time `gorm:"column:created_at"`
 }
 
 func (RefundPO) TableName() string { return "order_refunds" }
 
 type CompensationPO struct {
-	ID        int64      `gorm:"column:id;primaryKey;autoIncrement"`
-	Kind      string     `gorm:"column:kind;size:32;index"`
-	Ref       string     `gorm:"column:ref;size:128"`
-	Payload   string     `gorm:"column:payload;type:text"`
-	Status    string     `gorm:"column:status;size:16;index"`
-	Attempts  int        `gorm:"column:attempts"`
-	CreatedAt time.Time  `gorm:"column:created_at"`
-	DoneAt    *time.Time `gorm:"column:done_at"`
+	ID         int64      `gorm:"column:id;primaryKey;autoIncrement"`
+	Kind       string     `gorm:"column:kind;size:32;index"`
+	TenantID   string     `gorm:"column:tenant_id;size:64"`
+	Ref        string     `gorm:"column:ref;size:128"`
+	Payload    string     `gorm:"column:payload;type:text"`
+	Status     string     `gorm:"column:status;size:16;index"`
+	Attempts   int        `gorm:"column:attempts"`
+	LastError  string     `gorm:"column:last_error;type:text"`
+	NextRetry  *time.Time `gorm:"column:next_retry_at;index"`
+	CreatedAt  time.Time  `gorm:"column:created_at"`
+	DoneAt     *time.Time `gorm:"column:done_at"`
 }
 
 func (CompensationPO) TableName() string { return "saga_compensations" }
@@ -181,6 +188,7 @@ func orderToPO(o *domain.Order) OrderPO {
 		PayMethod:        string(o.PayMethod),
 		PaymentIntentID:  o.Payment.PaymentIntentID,
 		PaymentChannel:   o.Payment.Channel,
+		RenewCount:       o.RenewCount,
 		ContextJSON:      ctx,
 		CreatedAt:        o.CreatedAt,
 		UpdatedAt:        o.UpdatedAt,
@@ -253,6 +261,7 @@ func poToOrder(po OrderPO, lines []OrderLinePO) *domain.Order {
 			Channel:         po.PaymentChannel,
 		},
 		PayMethod:   domain.PayMethod(po.PayMethod),
+		RenewCount:  po.RenewCount,
 		CreatedAt:   po.CreatedAt,
 		UpdatedAt:   po.UpdatedAt,
 		PaidAt:      po.PaidAt,

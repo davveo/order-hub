@@ -2,6 +2,7 @@ package httpserver
 
 import (
 	"bytes"
+	"context"
 	"io"
 	"net/http"
 	"strconv"
@@ -18,7 +19,10 @@ type Handlers struct {
 	CancelSvc   *application.CancelService
 	PaymentSvc  *application.PaymentService
 	RefundSvc   *application.RefundService
+	RenewSvc    *application.RenewService
+	Compensate  *application.CompensateWorker
 	PaySecret   string
+	ReadyFn     func(ctx context.Context) error
 }
 
 func (h *Handlers) Preview(c *gin.Context) {
@@ -135,6 +139,7 @@ func (h *Handlers) Refund(c *gin.Context) {
 	refund, err := h.RefundSvc.Refund(c.Request.Context(), identity(c), c.Param("order_id"), application.RefundCmd{
 		Amount: req.Amount,
 		Reason: req.Reason,
+		Lines:  toLineRefunds(req),
 	})
 	if err != nil {
 		writeAppError(c, err)
@@ -176,4 +181,71 @@ func (h *Handlers) PaymentCallback(c *gin.Context) {
 	OK(c, viewOrder(o))
 }
 
+func (h *Handlers) Renew(c *gin.Context) {
+	if h.RenewSvc == nil {
+		writeAppError(c, domain.ErrNotImplemented)
+		return
+	}
+	o, err := h.RenewSvc.Renew(c.Request.Context(), identity(c), c.Param("order_id"))
+	if err != nil {
+		writeAppError(c, err)
+		return
+	}
+	OK(c, viewOrder(o))
+}
+
+func (h *Handlers) ListCompensations(c *gin.Context) {
+	if h.Compensate == nil {
+		OK(c, gin.H{"items": []any{}})
+		return
+	}
+	limit, _ := strconv.Atoi(c.Query("limit"))
+	items, err := h.Compensate.List(c.Request.Context(), c.Query("status"), limit)
+	if err != nil {
+		writeAppError(c, err)
+		return
+	}
+	OK(c, gin.H{"items": items})
+}
+
+func (h *Handlers) RetryCompensation(c *gin.Context) {
+	if h.Compensate == nil {
+		writeAppError(c, domain.ErrNotImplemented)
+		return
+	}
+	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil {
+		writeAppError(c, domain.ErrInvalidArgument)
+		return
+	}
+	if err := h.Compensate.Retry(c.Request.Context(), id); err != nil {
+		writeAppError(c, err)
+		return
+	}
+	OK(c, gin.H{"id": id, "status": "done"})
+}
+
 func Health(c *gin.Context) { c.JSON(http.StatusOK, gin.H{"status": "ok"}) }
+
+func (h *Handlers) Ready(c *gin.Context) {
+	if h.ReadyFn == nil {
+		c.JSON(http.StatusOK, gin.H{"status": "ok"})
+		return
+	}
+	if err := h.ReadyFn(c.Request.Context()); err != nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"status": "not_ready", "error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"status": "ok"})
+}
+
+func toLineRefunds(req refundReq) []domain.LineRefund {
+	if len(req.Lines) == 0 {
+		return nil
+	}
+	out := make([]domain.LineRefund, 0, len(req.Lines))
+	for _, l := range req.Lines {
+		out = append(out, domain.LineRefund{LineID: l.LineID, Amount: l.Amount})
+	}
+	return out
+}

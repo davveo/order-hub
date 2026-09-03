@@ -131,9 +131,35 @@ func (s *PaymentService) onPaid(ctx context.Context, o *domain.Order, paid int64
 	}
 
 	if err := s.afterPaid(ctx, updated); err != nil {
-		_ = s.repo.InsertCompensation(ctx, "after_paid", updated.OrderID, err.Error())
+		_ = s.repo.InsertCompensation(ctx, port.CompensationTicket{
+			Kind:     "after_paid",
+			TenantID: updated.TenantID,
+			Ref:      updated.OrderID,
+			Payload:  err.Error(),
+		})
+		_, _ = s.repo.Transition(ctx, port.TransitionCmd{
+			TenantID: updated.TenantID,
+			OrderID:  updated.OrderID,
+			From:     []domain.Status{domain.StatusPaid},
+			To:       domain.StatusCompensating,
+			Version:  updated.Version,
+		})
 	}
 	return s.repo.FindByID(ctx, updated.TenantID, updated.OrderID)
+}
+
+func (s *PaymentService) RetryAfterPaid(ctx context.Context, tenantID, orderID string) error {
+	o, err := s.repo.FindByID(ctx, tenantID, orderID)
+	if err != nil {
+		return err
+	}
+	if o.Status == domain.StatusFulfilling || o.Status == domain.StatusCompleted {
+		return nil
+	}
+	if o.Status != domain.StatusPaid && o.Status != domain.StatusCompensating {
+		return domain.ErrStatusNotAllowed
+	}
+	return s.afterPaid(ctx, o)
 }
 
 func (s *PaymentService) afterPaid(ctx context.Context, o *domain.Order) error {
@@ -163,7 +189,7 @@ func (s *PaymentService) afterPaid(ctx context.Context, o *domain.Order) error {
 	cmd := port.TransitionCmd{
 		TenantID: o.TenantID,
 		OrderID:  o.OrderID,
-		From:     []domain.Status{domain.StatusPaid},
+		From:     []domain.Status{domain.StatusPaid, domain.StatusCompensating},
 		To:       next,
 		Version:  o.Version,
 	}
@@ -203,15 +229,16 @@ func (s *PaymentService) Complete(ctx context.Context, tenantID, orderID string)
 type RefundCmd struct {
 	Amount int64
 	Reason string
+	Lines  []domain.LineRefund
 }
 
 type RefundService struct {
-	repo    port.OrderRepository
-	offer   port.OfferClient
-	ledger  port.LedgerClient
-	pay     port.PaymentAdapter
-	ids     port.IDGenerator
-	clock   port.Clock
+	repo   port.OrderRepository
+	offer  port.OfferClient
+	ledger port.LedgerClient
+	pay    port.PaymentAdapter
+	ids    port.IDGenerator
+	clock  port.Clock
 }
 
 func NewRefundService(repo port.OrderRepository, offer port.OfferClient, ledger port.LedgerClient, pay port.PaymentAdapter, ids port.IDGenerator, clock port.Clock) *RefundService {
@@ -231,66 +258,137 @@ func (s *RefundService) Refund(ctx context.Context, ident *port.Identity, orderI
 	default:
 		return nil, domain.ErrStatusNotAllowed
 	}
-	if cmd.Amount <= 0 {
-		cmd.Amount = o.RefundableAmount()
-	}
-	if cmd.Amount <= 0 || cmd.Amount > o.RefundableAmount() {
-		return nil, domain.ErrRefundExceedsPaid
+	lines, amount, err := resolveRefundLines(o, cmd)
+	if err != nil {
+		return nil, err
 	}
 	now := s.clock.Now()
+	ledgerAmt, channelAmt := splitRefund(o, amount)
 	refund := domain.Refund{
-		RefundID:  s.ids.RefundID(),
-		OrderID:   o.OrderID,
-		TenantID:  o.TenantID,
-		Amount:    cmd.Amount,
-		Currency:  o.Amounts.Currency,
-		Status:    "processing",
-		Reason:    cmd.Reason,
-		CreatedAt: now,
+		RefundID:      s.ids.RefundID(),
+		OrderID:       o.OrderID,
+		TenantID:      o.TenantID,
+		Amount:        amount,
+		Currency:      o.Amounts.Currency,
+		Status:        "processing",
+		Reason:        cmd.Reason,
+		LedgerAmount:  ledgerAmt,
+		ChannelAmount: channelAmt,
+		Lines:         lines,
+		CreatedAt:     now,
 	}
-	full := cmd.Amount == o.RefundableAmount() && o.Amounts.Refunded+cmd.Amount == o.Amounts.Paid
+	full := o.Amounts.Refunded+amount == o.Amounts.Paid
 	next := domain.StatusPartialRefunded
 	if full {
 		next = domain.StatusRefunded
 	}
-	if o.NeedsChannelPay() && s.pay != nil {
+
+	_, err = s.repo.Transition(ctx, port.TransitionCmd{
+		TenantID: o.TenantID,
+		OrderID:  o.OrderID,
+		From:     []domain.Status{o.Status},
+		To:       domain.StatusRefunding,
+		Version:  o.Version,
+	})
+	if err != nil {
+		return nil, err
+	}
+	o.Version++
+	o.Status = domain.StatusRefunding
+
+	if channelAmt > 0 && s.pay != nil {
 		refund.ChannelRefund = true
 		if err := s.pay.Refund(ctx, refund); err != nil {
 			return nil, err
 		}
 	}
-	if o.HasLedgerFreeze() && o.Amounts.LedgerPay > 0 {
+	if ledgerAmt > 0 && o.HasLedgerFreeze() {
 		refund.LedgerCredit = true
-		share := o.Amounts.LedgerPay
-		if !full {
-			share = o.Amounts.LedgerPay * cmd.Amount / o.Amounts.Paid
-		}
-		if err := s.ledger.Credit(ctx, o.TenantID, o.BuyerUserID, o.Ledger.AssetCode, share, "order:refund:"+refund.RefundID, "order:capture:"+o.OrderID); err != nil {
+		if err := s.ledger.Credit(ctx, o.TenantID, o.BuyerUserID, o.Ledger.AssetCode, ledgerAmt, "order:refund:"+refund.RefundID, "order:capture:"+o.OrderID); err != nil {
 			return nil, err
 		}
 	}
 	if o.Promotion.RedemptionID != "" {
-		_ = s.offer.Reverse(ctx, o.Promotion.RedemptionID, refund.RefundID, "order:"+refund.RefundID+":reverse")
+		if err := s.offer.Reverse(ctx, o.Promotion.RedemptionID, refund.RefundID, "order:"+refund.RefundID+":reverse"); err != nil {
+			_ = s.repo.InsertCompensation(ctx, port.CompensationTicket{
+				Kind: "offer_reverse", TenantID: o.TenantID, Ref: refund.RefundID, Payload: o.Promotion.RedemptionID,
+			})
+		}
 	}
 	refund.Status = "succeeded"
 	ev := domain.NewEvent(s.ids.EventID(), domain.EventRefunded, o.TenantID, ident.TraceID, now, map[string]any{
 		"order_id":  o.OrderID,
 		"refund_id": refund.RefundID,
 		"amount":    refund.Amount,
+		"lines":     refund.Lines,
 	})
 	if _, err := s.repo.Transition(ctx, port.TransitionCmd{
 		TenantID:    o.TenantID,
 		OrderID:     o.OrderID,
-		From:        []domain.Status{o.Status},
+		From:        []domain.Status{domain.StatusRefunding},
 		To:          next,
 		Version:     o.Version,
-		RefundedAdd: cmd.Amount,
+		RefundedAdd: amount,
 		Event:       &ev,
 	}); err != nil {
 		return nil, err
 	}
 	_ = s.repo.InsertRefund(ctx, o, refund, ev)
 	return &refund, nil
+}
+
+func resolveRefundLines(o *domain.Order, cmd RefundCmd) ([]domain.LineRefund, int64, error) {
+	if len(cmd.Lines) > 0 {
+		byID := map[string]domain.OrderLine{}
+		for _, l := range o.Lines {
+			byID[l.LineID] = l
+		}
+		var sum int64
+		out := make([]domain.LineRefund, 0, len(cmd.Lines))
+		for _, lr := range cmd.Lines {
+			if lr.Amount <= 0 {
+				return nil, 0, fmt.Errorf("%w: line amount", domain.ErrInvalidArgument)
+			}
+			line, ok := byID[lr.LineID]
+			if !ok {
+				return nil, 0, fmt.Errorf("%w: unknown line %s", domain.ErrInvalidArgument, lr.LineID)
+			}
+			if lr.Amount > line.PayableAmount {
+				return nil, 0, domain.ErrRefundExceedsPaid
+			}
+			sum += lr.Amount
+			out = append(out, lr)
+		}
+		if cmd.Amount > 0 && cmd.Amount != sum {
+			return nil, 0, fmt.Errorf("%w: amount != line sum", domain.ErrAmountInvariant)
+		}
+		if sum <= 0 || sum > o.RefundableAmount() {
+			return nil, 0, domain.ErrRefundExceedsPaid
+		}
+		return out, sum, nil
+	}
+	amount := cmd.Amount
+	if amount <= 0 {
+		amount = o.RefundableAmount()
+	}
+	if amount <= 0 || amount > o.RefundableAmount() {
+		return nil, 0, domain.ErrRefundExceedsPaid
+	}
+	return nil, amount, nil
+}
+
+func splitRefund(o *domain.Order, amount int64) (ledgerAmt, channelAmt int64) {
+	den := o.Amounts.Payable
+	if den <= 0 {
+		return 0, amount
+	}
+	ledgerAmt = o.Amounts.LedgerPay * amount / den
+	channelAmt = amount - ledgerAmt
+	if channelAmt < 0 {
+		channelAmt = 0
+		ledgerAmt = amount
+	}
+	return ledgerAmt, channelAmt
 }
 
 type OutboxWorker struct {
@@ -310,7 +408,7 @@ func (w *OutboxWorker) Tick(ctx context.Context) (int, error) {
 	n := 0
 	for _, row := range rows {
 		var ev domain.Event
-	if err := json.Unmarshal(row.Payload, &ev); err != nil {
+		if err := json.Unmarshal(row.Payload, &ev); err != nil {
 			continue
 		}
 		if w.publisher != nil {

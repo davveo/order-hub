@@ -47,6 +47,10 @@ type checkoutReq struct {
 type refundReq struct {
 	Amount int64  `json:"amount"`
 	Reason string `json:"reason"`
+	Lines  []struct {
+		LineID string `json:"line_id"`
+		Amount int64  `json:"amount"`
+	} `json:"lines"`
 }
 
 type paymentCallbackReq struct {
@@ -104,6 +108,7 @@ type orderView struct {
 	PayMethod        string         `json:"pay_method"`
 	PaymentIntentID  string         `json:"payment_intent_id,omitempty"`
 	ExpireAt         *time.Time     `json:"expire_at,omitempty"`
+	RenewCount       int            `json:"renew_count,omitempty"`
 	Lines            []lineDTO      `json:"lines,omitempty"`
 	Ext              map[string]any `json:"ext,omitempty"`
 	CreatedAt        time.Time      `json:"created_at"`
@@ -135,6 +140,7 @@ func viewOrder(o *domain.Order) orderView {
 		AssetCode:        o.Ledger.AssetCode,
 		PayMethod:        string(o.PayMethod),
 		PaymentIntentID:  o.Payment.PaymentIntentID,
+		RenewCount:       o.RenewCount,
 		Ext:              o.Context,
 		CreatedAt:        o.CreatedAt,
 		PaidAt:           o.PaidAt,

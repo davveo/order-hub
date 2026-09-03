@@ -25,8 +25,12 @@ func main() {
 
 	tickTimeout := time.NewTicker(2 * time.Second)
 	tickOutbox := time.NewTicker(500 * time.Millisecond)
+	tickComp := time.NewTicker(2 * time.Second)
+	tickRenew := time.NewTicker(15 * time.Second)
 	defer tickTimeout.Stop()
 	defer tickOutbox.Stop()
+	defer tickComp.Stop()
+	defer tickRenew.Stop()
 
 	for {
 		select {
@@ -46,6 +50,20 @@ func main() {
 				log.Printf("outbox worker: %v", err)
 			} else if n > 0 {
 				log.Printf("published %d events", n)
+			}
+		case <-tickComp.C:
+			n, err := rt.Compensate.Tick(ctx)
+			if err != nil {
+				log.Printf("compensate worker: %v", err)
+			} else if n > 0 {
+				log.Printf("compensated %d tickets", n)
+			}
+		case <-tickRenew.C:
+			n, err := rt.Renew.Tick(ctx)
+			if err != nil {
+				log.Printf("renew worker: %v", err)
+			} else if n > 0 {
+				log.Printf("renewed %d reservations", n)
 			}
 		}
 	}

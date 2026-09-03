@@ -2,6 +2,8 @@ package domain
 
 import "time"
 
+const MaxReservationRenew = 3
+
 type OfferMode string
 
 const (

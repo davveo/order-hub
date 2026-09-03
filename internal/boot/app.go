@@ -10,6 +10,7 @@ import (
 	"github.com/davveo/order-hub/internal/application/port"
 	"github.com/davveo/order-hub/internal/conf"
 	"github.com/davveo/order-hub/internal/domain"
+	httpserver "github.com/davveo/order-hub/internal/iface/http"
 	"github.com/davveo/order-hub/internal/infra/authclient"
 	"github.com/davveo/order-hub/internal/infra/cache"
 	"github.com/davveo/order-hub/internal/infra/clock"
@@ -21,18 +22,19 @@ import (
 	"github.com/davveo/order-hub/internal/infra/outbox"
 	"github.com/davveo/order-hub/internal/infra/payment"
 	"github.com/davveo/order-hub/internal/infra/persistence"
-	httpserver "github.com/davveo/order-hub/internal/iface/http"
 	"github.com/gin-gonic/gin"
 	"github.com/redis/go-redis/v9"
 	"gorm.io/gorm"
 )
 
 type Runtime struct {
-	Config  conf.Config
-	Engine  *gin.Engine
-	Timeout *application.TimeoutWorker
-	Outbox  *application.OutboxWorker
-	Close   func()
+	Config     conf.Config
+	Engine     *gin.Engine
+	Timeout    *application.TimeoutWorker
+	Outbox     *application.OutboxWorker
+	Compensate *application.CompensateWorker
+	Renew      *application.RenewService
+	Close      func()
 }
 
 func Build(cfg conf.Config) (*Runtime, error) {
@@ -107,6 +109,19 @@ func Build(cfg conf.Config) (*Runtime, error) {
 	cancelSvc := application.NewCancelService(scenes, repo, offer, ledger, pay, fulfill, ids, clk)
 	paySvc := application.NewPaymentService(scenes, repo, offer, ledger, pay, fulfill, ids, clk)
 	refundSvc := application.NewRefundService(repo, offer, ledger, pay, ids, clk)
+	renewSvc := application.NewRenewService(repo, offer, clk)
+	compensate := application.NewCompensateWorker(repo, paySvc, offer, ledger, fulfill, clk)
+
+	readyFn := func(ctx context.Context) error {
+		if db != nil {
+			sqlDB, err := db.DB()
+			if err != nil {
+				return err
+			}
+			return sqlDB.PingContext(ctx)
+		}
+		return nil
+	}
 
 	h := &httpserver.Handlers{
 		PreviewSvc:  previewSvc,
@@ -115,14 +130,19 @@ func Build(cfg conf.Config) (*Runtime, error) {
 		CancelSvc:   cancelSvc,
 		PaymentSvc:  paySvc,
 		RefundSvc:   refundSvc,
+		RenewSvc:    renewSvc,
+		Compensate:  compensate,
 		PaySecret:   cfg.PaymentCallbackSK,
+		ReadyFn:     readyFn,
 	}
 
 	return &Runtime{
-		Config:  cfg,
-		Engine:  httpserver.NewRouter(h, auth),
-		Timeout: application.NewTimeoutWorker(repo, cancelSvc, clk),
-		Outbox:  application.NewOutboxWorker(repo, outbox.LogPublisher{}),
+		Config:     cfg,
+		Engine:     httpserver.NewRouter(h, auth),
+		Timeout:    application.NewTimeoutWorker(repo, cancelSvc, clk),
+		Outbox:     application.NewOutboxWorker(repo, outbox.LogPublisher{}),
+		Compensate: compensate,
+		Renew:      renewSvc,
 		Close: func() {
 			if rdb != nil {
 				_ = rdb.Close()

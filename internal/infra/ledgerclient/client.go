@@ -11,6 +11,7 @@ import (
 
 	"github.com/davveo/order-hub/internal/application/port"
 	"github.com/davveo/order-hub/internal/domain"
+	"github.com/davveo/order-hub/internal/infra/httpx"
 )
 
 type Client struct {
@@ -36,20 +37,20 @@ func (c *Client) GetBalance(ctx context.Context, tenantID, userID, assetCode str
 		return 0, err
 	}
 	defer resp.Body.Close()
-	if resp.StatusCode >= 300 {
-		return 0, fmt.Errorf("ledger balance status %d", resp.StatusCode)
-	}
 	var out struct {
 		Available int64 `json:"available"`
 	}
-	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+	if err := httpx.Decode(resp, &out); err != nil {
 		return 0, err
 	}
 	return out.Available, nil
 }
 
 func (c *Client) Freeze(ctx context.Context, req port.FreezeRequest) (string, error) {
-	out, err := post[map[string]string](ctx, c, "/api/v1/ledger/freeze", req)
+	out, err := post[map[string]string](ctx, c, "/api/v1/ledger/freeze", map[string]any{
+		"tenant_id": req.TenantID, "user_id": req.UserID, "asset_code": req.AssetCode,
+		"amount": req.Amount, "biz_no": req.BizNo, "source_system": "order",
+	})
 	if err != nil {
 		return "", err
 	}
@@ -89,14 +90,8 @@ func post[T any](ctx context.Context, c *Client, path string, payload any) (*T, 
 		return nil, err
 	}
 	defer resp.Body.Close()
-	if resp.StatusCode == 422 {
-		return nil, domain.ErrLedgerFreeze
-	}
-	if resp.StatusCode >= 300 {
-		return nil, fmt.Errorf("ledger %s status %d", path, resp.StatusCode)
-	}
 	var out T
-	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+	if err := httpx.Decode(resp, &out); err != nil {
 		return nil, err
 	}
 	return &out, nil

@@ -72,7 +72,15 @@ type Refund struct {
 	Reason        string
 	ChannelRefund bool
 	LedgerCredit  bool
+	LedgerAmount  int64
+	ChannelAmount int64
+	Lines         []LineRefund
 	CreatedAt     time.Time
+}
+
+type LineRefund struct {
+	LineID string
+	Amount int64
 }
 
 type Order struct {
@@ -90,6 +98,7 @@ type Order struct {
 	Payment       PaymentRef
 	PayMethod     PayMethod
 	ExpireAt      time.Time
+	RenewCount    int
 	Context       map[string]any
 	Lines         []OrderLine
 	Promotions    []PromotionDetail

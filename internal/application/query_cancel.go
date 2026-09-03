@@ -126,17 +126,23 @@ func (s *CancelService) cancel(ctx context.Context, o *domain.Order, traceID str
 
 	if updated.HasOfferReservation() {
 		if err := s.offer.Release(ctx, updated.Promotion.ReservationID, updated.OrderID, "order:"+updated.OrderID+":release"); err != nil {
-			_ = s.repo.InsertCompensation(ctx, "offer_release", updated.Promotion.ReservationID, updated.OrderID)
+			_ = s.repo.InsertCompensation(ctx, port.CompensationTicket{
+				Kind: "offer_release", TenantID: updated.TenantID, Ref: updated.Promotion.ReservationID, Payload: updated.OrderID,
+			})
 		}
 	}
 	if updated.HasLedgerFreeze() {
 		if err := s.ledger.Release(ctx, updated.Ledger.FreezeID, "order:release:"+updated.OrderID); err != nil {
-			_ = s.repo.InsertCompensation(ctx, "ledger_release", updated.Ledger.FreezeID, updated.OrderID)
+			_ = s.repo.InsertCompensation(ctx, port.CompensationTicket{
+				Kind: "ledger_release", TenantID: updated.TenantID, Ref: updated.Ledger.FreezeID, Payload: updated.OrderID,
+			})
 		}
 	}
 	if adapter := s.fulfill.ForScene(updated.Scene); adapter != nil {
 		if err := adapter.Release(ctx, updated); err != nil {
-			_ = s.repo.InsertCompensation(ctx, "fulfill_release", updated.OrderID, updated.Scene)
+			_ = s.repo.InsertCompensation(ctx, port.CompensationTicket{
+				Kind: "fulfill_release", TenantID: updated.TenantID, Ref: updated.OrderID, Payload: updated.Scene,
+			})
 		}
 	}
 	if updated.Payment.PaymentIntentID != "" && s.pay != nil {

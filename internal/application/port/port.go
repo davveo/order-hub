@@ -167,12 +167,31 @@ type OrderRepository interface {
 	UpdatePaymentIntent(ctx context.Context, tenantID, orderID, intentID, channel string) error
 	UpdateRedemption(ctx context.Context, tenantID, orderID, redemptionID string) error
 	ListExpiredPending(ctx context.Context, now time.Time, limit int) ([]domain.Order, error)
+	ListPendingPayForRenew(ctx context.Context, now time.Time, window time.Duration, maxRenew, limit int) ([]domain.Order, error)
+	BumpRenew(ctx context.Context, tenantID, orderID string, expectedCount int) error
 	ListByBuyer(ctx context.Context, tenantID, buyerID string, status domain.Status, scene, cursor string, limit int) ([]domain.Order, string, error)
 	UpdateIdempotencyResponse(ctx context.Context, tenantID, actor, key string, resp []byte) error
 	InsertRefund(ctx context.Context, o *domain.Order, refund domain.Refund, event domain.Event) error
-	InsertCompensation(ctx context.Context, kind, ref, payload string) error
+	InsertCompensation(ctx context.Context, t CompensationTicket) error
+	ClaimCompensations(ctx context.Context, now time.Time, limit int) ([]CompensationTicket, error)
+	UpdateCompensation(ctx context.Context, id int64, status, lastErr string, nextRetry *time.Time) error
+	ListCompensations(ctx context.Context, status string, limit int) ([]CompensationTicket, error)
+	FindCompensation(ctx context.Context, id int64) (*CompensationTicket, error)
 	ListUnpublishedEvents(ctx context.Context, limit int) ([]OutboxRow, error)
 	MarkEventPublished(ctx context.Context, eventID string) error
+}
+
+type CompensationTicket struct {
+	ID         int64
+	Kind       string
+	TenantID   string
+	Ref        string
+	Payload    string
+	Status     string
+	Attempts   int
+	LastError  string
+	NextRetry  *time.Time
+	CreatedAt  time.Time
 }
 
 type OutboxRow struct {
