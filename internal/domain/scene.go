@@ -4,6 +4,12 @@ import "time"
 
 const MaxReservationRenew = 3
 
+const (
+	OfferReservationActive    = "ACTIVE"
+	OfferReservationCommitted = "COMMITTED"
+	OfferReservationReleased  = "RELEASED"
+)
+
 type OfferMode string
 
 const (
@@ -71,34 +77,37 @@ func DefaultScenes() map[string]SceneConfig {
 			Fulfillment:        FulfillmentVirtualGrant,
 		},
 		"membership": {
-			Name:               "membership",
-			Currency:           "CNY",
-			Offer:              OfferOptional,
-			Ledger:             LedgerOptional,
-			Inventory:          InventoryNone,
-			PayTimeout:         30 * time.Minute,
-			AutoCompleteOnPaid: true,
-			Fulfillment:        FulfillmentEntitlement,
+			Name:                "membership",
+			Currency:            "CNY",
+			Offer:               OfferOptional,
+			Ledger:              LedgerOptional,
+			Inventory:           InventoryNone,
+			PayTimeout:          30 * time.Minute,
+			AutoCompleteOnPaid:  true,
+			Fulfillment:         FulfillmentEntitlement,
+			AllowCloseAfterPaid: true,
 		},
 		"course": {
-			Name:               "course",
-			Currency:           "CNY",
-			Offer:              OfferOptional,
-			Ledger:             LedgerNone,
-			Inventory:          InventoryNone,
-			PayTimeout:         30 * time.Minute,
-			AutoCompleteOnPaid: true,
-			Fulfillment:        FulfillmentEntitlement,
+			Name:                "course",
+			Currency:            "CNY",
+			Offer:               OfferOptional,
+			Ledger:              LedgerNone,
+			Inventory:           InventoryNone,
+			PayTimeout:          30 * time.Minute,
+			AutoCompleteOnPaid:  true,
+			Fulfillment:         FulfillmentEntitlement,
+			AllowCloseAfterPaid: true,
 		},
 		"saas_subscription": {
-			Name:               "saas_subscription",
-			Currency:           "CNY",
-			Offer:              OfferOptional,
-			Ledger:             LedgerNone,
-			Inventory:          InventoryNone,
-			PayTimeout:         30 * time.Minute,
-			AutoCompleteOnPaid: true,
-			Fulfillment:        FulfillmentEntitlement,
+			Name:                "saas_subscription",
+			Currency:            "CNY",
+			Offer:               OfferOptional,
+			Ledger:              LedgerNone,
+			Inventory:           InventoryNone,
+			PayTimeout:          30 * time.Minute,
+			AutoCompleteOnPaid:  true,
+			Fulfillment:         FulfillmentEntitlement,
+			AllowCloseAfterPaid: true,
 		},
 	}
 }

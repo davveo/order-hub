@@ -165,7 +165,7 @@ func (s *PaymentService) RetryAfterPaid(ctx context.Context, tenantID, orderID s
 func (s *PaymentService) afterPaid(ctx context.Context, o *domain.Order) error {
 	scene := s.scenes[o.Scene]
 	if o.HasOfferReservation() {
-		rid, err := s.offer.Commit(ctx, o.Promotion.ReservationID, o.OrderID, "order:"+o.OrderID+":commit")
+		rid, err := s.offer.Commit(ctx, o.TenantID, o.Promotion.ReservationID, o.OrderID, "order:"+o.OrderID+":commit")
 		if err != nil {
 			return err
 		}
@@ -309,7 +309,8 @@ func (s *RefundService) Refund(ctx context.Context, ident *port.Identity, orderI
 		}
 	}
 	if o.Promotion.RedemptionID != "" {
-		if err := s.offer.Reverse(ctx, o.Promotion.RedemptionID, refund.RefundID, "order:"+refund.RefundID+":reverse"); err != nil {
+		revAmt := reverseDiscount(o, amount, full)
+		if err := s.offer.Reverse(ctx, o.TenantID, o.Promotion.RedemptionID, refund.RefundID, revAmt, "order:"+refund.RefundID+":reverse"); err != nil {
 			_ = s.repo.InsertCompensation(ctx, port.CompensationTicket{
 				Kind: "offer_reverse", TenantID: o.TenantID, Ref: refund.RefundID, Payload: o.Promotion.RedemptionID,
 			})
@@ -375,6 +376,16 @@ func resolveRefundLines(o *domain.Order, cmd RefundCmd) ([]domain.LineRefund, in
 		return nil, 0, domain.ErrRefundExceedsPaid
 	}
 	return nil, amount, nil
+}
+
+func reverseDiscount(o *domain.Order, refundAmt int64, full bool) int64 {
+	if o.Amounts.Discount <= 0 {
+		return 0
+	}
+	if full || o.Amounts.Payable <= 0 {
+		return 0
+	}
+	return o.Amounts.Discount * refundAmt / o.Amounts.Payable
 }
 
 func splitRefund(o *domain.Order, amount int64) (ledgerAmt, channelAmt int64) {

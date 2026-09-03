@@ -12,28 +12,28 @@ import (
 )
 
 type CheckoutCmd struct {
-	ClientOrderID   string
-	Scene           string
-	Channel         string
-	QuoteID         string
-	CouponIDs       []string
-	Items           []domain.OrderLine
-	PayMethod       domain.PayMethod
-	LedgerPay       *LedgerPay
-	Ext             map[string]any
-	IdempotencyKey  string
-	TraceID         string
+	ClientOrderID  string
+	Scene          string
+	Channel        string
+	QuoteID        string
+	CouponIDs      []string
+	Items          []domain.OrderLine
+	PayMethod      domain.PayMethod
+	LedgerPay      *LedgerPay
+	Ext            map[string]any
+	IdempotencyKey string
+	TraceID        string
 }
 
 type CheckoutResult struct {
-	OrderID        string             `json:"order_id"`
-	Status         domain.Status      `json:"status"`
-	ReservationID  string             `json:"reservation_id,omitempty"`
-	FreezeID       string             `json:"freeze_id,omitempty"`
-	PaymentIntent  *port.PaymentIntent `json:"payment_intent,omitempty"`
-	PayableAmount  int64              `json:"payable_amount"`
-	Currency       string             `json:"currency"`
-	ExpireAt       time.Time          `json:"expire_at"`
+	OrderID       string              `json:"order_id"`
+	Status        domain.Status       `json:"status"`
+	ReservationID string              `json:"reservation_id,omitempty"`
+	FreezeID      string              `json:"freeze_id,omitempty"`
+	PaymentIntent *port.PaymentIntent `json:"payment_intent,omitempty"`
+	PayableAmount int64               `json:"payable_amount"`
+	Currency      string              `json:"currency"`
+	ExpireAt      time.Time           `json:"expire_at"`
 }
 
 type CheckoutService struct {
@@ -166,6 +166,7 @@ func (s *CheckoutService) Checkout(ctx context.Context, ident *port.Identity, cm
 		Channel:    cmd.Channel,
 		Currency:   scene.Currency,
 		CouponIDs:  coupons,
+		AutoBest:   len(coupons) == 0,
 		Items:      items,
 		Attributes: ident.Attributes,
 		Context:    ext,
@@ -218,12 +219,12 @@ func (s *CheckoutService) Checkout(ctx context.Context, ident *port.Identity, cm
 			_ = s.ledger.Release(rctx, freezeID, "order:release:"+orderID)
 		}
 		if reservationID != "" {
-			_ = s.offer.Release(rctx, reservationID, orderID, "order:"+orderID+":release")
+			_ = s.offer.Release(rctx, ident.TenantID, reservationID, orderID, "order:"+orderID+":release")
 		}
 	}
 
 	if scene.NeedsOffer(quote.QuoteID != "", len(coupons)) && quote.DiscountAmount >= 0 {
-		res, err := s.offer.Reserve(ctx, quote.QuoteID, orderID, "order:"+orderID+":reserve")
+		res, err := s.offer.Reserve(ctx, ident.TenantID, quote.QuoteID, orderID, "order:"+orderID+":reserve")
 		if err != nil {
 			return nil, fmt.Errorf("%w: %v", domain.ErrOfferReserve, err)
 		}
@@ -265,13 +266,13 @@ func (s *CheckoutService) Checkout(ctx context.Context, ident *port.Identity, cm
 			AssetCode: asset,
 			BizNo:     "order:freeze:" + orderID,
 		},
-		PayMethod: payMethod,
-		ExpireAt:  now.Add(scene.PayTimeout),
-		Context:   ext,
-		Lines:     items,
+		PayMethod:  payMethod,
+		ExpireAt:   now.Add(scene.PayTimeout),
+		Context:    ext,
+		Lines:      items,
 		Promotions: promotions,
-		CreatedAt: now,
-		UpdatedAt: now,
+		CreatedAt:  now,
+		UpdatedAt:  now,
 	}
 	if len(order.Promotions) == 0 {
 		order.Promotions = quote.Promotions

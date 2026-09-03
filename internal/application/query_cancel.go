@@ -81,6 +81,13 @@ func (s *QueryService) AdminStats(ctx context.Context, tenantID string) (*AdminS
 	return &AdminStats{Orders: orders, Compensations: comps, UnpublishedEvents: n}, nil
 }
 
+func (s *QueryService) ListOutbox(ctx context.Context, limit int) ([]port.OutboxRow, error) {
+	if limit <= 0 || limit > 200 {
+		limit = 50
+	}
+	return s.repo.ListUnpublishedEvents(ctx, limit)
+}
+
 type CancelService struct {
 	scenes  map[string]domain.SceneConfig
 	repo    port.OrderRepository
@@ -159,7 +166,7 @@ func (s *CancelService) cancel(ctx context.Context, o *domain.Order, traceID str
 	}
 
 	if updated.HasOfferReservation() {
-		if err := s.offer.Release(ctx, updated.Promotion.ReservationID, updated.OrderID, "order:"+updated.OrderID+":release"); err != nil {
+		if err := s.offer.Release(ctx, updated.TenantID, updated.Promotion.ReservationID, updated.OrderID, "order:"+updated.OrderID+":release"); err != nil {
 			_ = s.repo.InsertCompensation(ctx, port.CompensationTicket{
 				Kind: "offer_release", TenantID: updated.TenantID, Ref: updated.Promotion.ReservationID, Payload: updated.OrderID,
 			})

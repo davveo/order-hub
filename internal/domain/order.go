@@ -11,16 +11,16 @@ const (
 )
 
 type OrderLine struct {
-	LineID          string
-	ObjectType      string
-	ObjectID        string
-	Quantity        int64
-	UnitPrice       int64
-	OriginalAmount  int64
-	DiscountAmount  int64
-	PayableAmount   int64
-	Attributes      map[string]string
-	Snapshot        map[string]any
+	LineID         string
+	ObjectType     string
+	ObjectID       string
+	Quantity       int64
+	UnitPrice      int64
+	OriginalAmount int64
+	DiscountAmount int64
+	PayableAmount  int64
+	Attributes     map[string]string
+	Snapshot       map[string]any
 }
 
 type PromotionRef struct {
@@ -41,16 +41,16 @@ type PaymentRef struct {
 }
 
 type PromotionDetail struct {
-	SourceType          string
-	SourceID            string
-	DiscountAmount      int64
-	Allocations         []Allocation
-	RuleSnapshotVersion string
+	SourceType          string       `json:"source_type"`
+	SourceID            string       `json:"source_id"`
+	DiscountAmount      int64        `json:"discount_amount"`
+	Allocations         []Allocation `json:"allocations,omitempty"`
+	RuleSnapshotVersion string       `json:"rule_snapshot_version,omitempty"`
 }
 
 type Allocation struct {
-	LineID         string
-	DiscountAmount int64
+	LineID         string `json:"line_id"`
+	DiscountAmount int64  `json:"discount_amount"`
 }
 
 type LedgerLeg struct {

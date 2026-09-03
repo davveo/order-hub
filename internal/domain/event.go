@@ -8,6 +8,7 @@ const (
 	EventFulfilled = "order.fulfilled.v1"
 	EventCompleted = "order.completed.v1"
 	EventCancelled = "order.cancelled.v1"
+	EventClosed    = "order.closed.v1"
 	EventRefunded  = "order.refunded.v1"
 )
 

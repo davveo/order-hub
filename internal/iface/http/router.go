@@ -28,6 +28,7 @@ func NewRouter(h *Handlers, auth port.AuthClient) *gin.Engine {
 		v1.POST("/orders/:order_id/complete", h.Complete)
 		v1.POST("/orders/:order_id/refunds", h.Refund)
 		v1.POST("/orders/:order_id/renew", h.Renew)
+		v1.POST("/orders/:order_id/close", h.Close)
 	}
 
 	internal := r.Group("/internal/v1")
@@ -47,8 +48,12 @@ func NewRouter(h *Handlers, auth port.AuthClient) *gin.Engine {
 		admin.POST("/orders/:order_id/renew", h.AdminRenew)
 		admin.POST("/orders/:order_id/retry-paid", h.AdminRetryPaid)
 		admin.POST("/orders/:order_id/refunds", h.AdminRefund)
+		admin.POST("/orders/:order_id/close", h.AdminClose)
 		admin.GET("/compensations", h.ListCompensations)
 		admin.POST("/compensations/:id/retry", h.RetryCompensation)
+		admin.GET("/reconcile/offer", h.AdminReconcileOffer)
+		admin.POST("/reconcile/offer", h.AdminReconcileOffer)
+		admin.GET("/outbox", h.AdminOutbox)
 		admin.POST("/seed", h.AdminSeed)
 	}
 	return r

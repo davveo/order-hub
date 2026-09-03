@@ -33,29 +33,40 @@ type QuoteRequest struct {
 }
 
 type QuoteResult struct {
-	QuoteID        string
-	Currency       string
-	OriginalAmount int64
-	DiscountAmount int64
-	PayableAmount  int64
-	Allocations    []domain.Allocation
-	Promotions     []domain.PromotionDetail
-	ExpiresAt      time.Time
-	ContextHash    string
+	QuoteID        string                   `json:"quote_id"`
+	Currency       string                   `json:"currency"`
+	OriginalAmount int64                    `json:"original_amount"`
+	DiscountAmount int64                    `json:"discount_amount"`
+	PayableAmount  int64                    `json:"payable_amount"`
+	Allocations    []domain.Allocation      `json:"allocations,omitempty"`
+	Promotions     []domain.PromotionDetail `json:"promotions,omitempty"`
+	ExpiresAt      time.Time                `json:"expires_at"`
+	ContextHash    string                   `json:"context_hash,omitempty"`
 }
 
 type ReservationResult struct {
-	ReservationID string
-	ExpiresAt     time.Time
+	ReservationID string    `json:"reservation_id"`
+	QuoteID       string    `json:"quote_id,omitempty"`
+	ExpiresAt     time.Time `json:"expires_at"`
+	Status        string    `json:"status,omitempty"`
+}
+
+type RedemptionResult struct {
+	RedemptionID   string `json:"redemption_id"`
+	ReservationID  string `json:"reservation_id,omitempty"`
+	DiscountAmount int64  `json:"discount_amount,omitempty"`
+	ReversedAmount int64  `json:"reversed_amount,omitempty"`
 }
 
 type OfferClient interface {
 	Quote(ctx context.Context, req QuoteRequest) (*QuoteResult, error)
-	Reserve(ctx context.Context, quoteID, orderID, idemKey string) (*ReservationResult, error)
-	Commit(ctx context.Context, reservationID, orderID, idemKey string) (redemptionID string, err error)
-	Release(ctx context.Context, reservationID, orderID, idemKey string) error
-	Renew(ctx context.Context, reservationID, orderID, idemKey string) error
-	Reverse(ctx context.Context, redemptionID, refundID, idemKey string) error
+	Reserve(ctx context.Context, tenantID, quoteID, orderID, idemKey string) (*ReservationResult, error)
+	Commit(ctx context.Context, tenantID, reservationID, orderID, idemKey string) (redemptionID string, err error)
+	Release(ctx context.Context, tenantID, reservationID, orderID, idemKey string) error
+	Renew(ctx context.Context, tenantID, reservationID, orderID, idemKey string) error
+	Reverse(ctx context.Context, tenantID, redemptionID, refundID string, amount int64, idemKey string) error
+	GetReservation(ctx context.Context, tenantID, reservationID string) (*ReservationResult, error)
+	GetRedemption(ctx context.Context, tenantID, redemptionID string) (*RedemptionResult, error)
 }
 
 type FreezeRequest struct {
@@ -183,6 +194,8 @@ type OrderRepository interface {
 	CountUnpublishedEvents(ctx context.Context) (int64, error)
 	ListUnpublishedEvents(ctx context.Context, limit int) ([]OutboxRow, error)
 	MarkEventPublished(ctx context.Context, eventID string) error
+	ListForReconcile(ctx context.Context, tenantID string, limit int) ([]domain.Order, error)
+	HasOpenCompensation(ctx context.Context, kind, tenantID, ref string) (bool, error)
 }
 
 type AdminListFilter struct {

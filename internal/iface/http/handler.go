@@ -13,18 +13,21 @@ import (
 )
 
 type Handlers struct {
-	PreviewSvc  *application.PreviewService
-	CheckoutSvc *application.CheckoutService
-	QuerySvc    *application.QueryService
-	CancelSvc   *application.CancelService
-	PaymentSvc  *application.PaymentService
-	RefundSvc   *application.RefundService
-	RenewSvc    *application.RenewService
-	Compensate  *application.CompensateWorker
-	SeedSvc     *application.SeedService
-	PaySecret   string
-	ReadyFn     func(ctx context.Context) error
-	AdminToken  string
+	PreviewSvc       *application.PreviewService
+	CheckoutSvc      *application.CheckoutService
+	QuerySvc         *application.QueryService
+	CancelSvc        *application.CancelService
+	PaymentSvc       *application.PaymentService
+	RefundSvc        *application.RefundService
+	RenewSvc         *application.RenewService
+	CloseSvc         *application.CloseService
+	Compensate       *application.CompensateWorker
+	ReconSvc         *application.ReconService
+	SeedSvc          *application.SeedService
+	PaySecret        string
+	AllowUnsignedPay bool
+	ReadyFn          func(ctx context.Context) error
+	AdminToken       string
 }
 
 func (h *Handlers) Preview(c *gin.Context) {
@@ -159,7 +162,12 @@ func (h *Handlers) PaymentCallback(c *gin.Context) {
 	}
 	c.Request.Body = io.NopCloser(bytes.NewReader(body))
 	sig := c.GetHeader("X-Payment-Signature")
-	if !verifyPaymentSig(h.PaySecret, body, sig) {
+	if h.PaySecret == "" {
+		if !h.AllowUnsignedPay {
+			Fail(c, http.StatusUnauthorized, 40100, "payment secret not configured")
+			return
+		}
+	} else if !verifyPaymentSig(h.PaySecret, body, sig) {
 		Fail(c, http.StatusUnauthorized, 40100, "invalid payment signature")
 		return
 	}
@@ -177,6 +185,19 @@ func (h *Handlers) PaymentCallback(c *gin.Context) {
 		Channel:         req.Channel,
 		TraceID:         requestID(c),
 	})
+	if err != nil {
+		writeAppError(c, err)
+		return
+	}
+	OK(c, viewOrder(o))
+}
+
+func (h *Handlers) Close(c *gin.Context) {
+	if h.CloseSvc == nil {
+		writeAppError(c, domain.ErrNotImplemented)
+		return
+	}
+	o, err := h.CloseSvc.Close(c.Request.Context(), identity(c), c.Param("order_id"))
 	if err != nil {
 		writeAppError(c, err)
 		return

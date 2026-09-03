@@ -446,6 +446,39 @@ func (r *OrderRepo) TicketCount() int {
 	return n
 }
 
+func (r *OrderRepo) ListForReconcile(_ context.Context, tenantID string, limit int) ([]domain.Order, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if limit <= 0 {
+		limit = 200
+	}
+	out := make([]domain.Order, 0)
+	for _, o := range r.orders {
+		if tenantID != "" && o.TenantID != tenantID {
+			continue
+		}
+		if o.Promotion.ReservationID == "" && o.Amounts.LedgerPay <= 0 {
+			continue
+		}
+		out = append(out, *clone(o))
+		if len(out) >= limit {
+			break
+		}
+	}
+	return out, nil
+}
+
+func (r *OrderRepo) HasOpenCompensation(_ context.Context, kind, tenantID, ref string) (bool, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	for _, t := range r.tickets {
+		if t.Kind == kind && t.TenantID == tenantID && t.Ref == ref && (t.Status == "pending" || t.Status == "running") {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
 func (r *OrderRepo) ListUnpublishedEvents(_ context.Context, limit int) ([]port.OutboxRow, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()

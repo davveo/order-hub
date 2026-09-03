@@ -3,6 +3,7 @@ package httpserver
 import (
 	"crypto/subtle"
 	_ "embed"
+	"encoding/json"
 	"net/http"
 	"strconv"
 
@@ -178,6 +179,62 @@ func (h *Handlers) AdminRefund(c *gin.Context) {
 		return
 	}
 	OK(c, refund)
+}
+
+func (h *Handlers) AdminClose(c *gin.Context) {
+	if h.CloseSvc == nil {
+		writeAppError(c, domain.ErrNotImplemented)
+		return
+	}
+	o, err := h.QuerySvc.GetInternal(c.Request.Context(), "", c.Param("order_id"))
+	if err != nil {
+		writeAppError(c, err)
+		return
+	}
+	out, err := h.CloseSvc.Close(c.Request.Context(), adminOperator(c, o.TenantID), o.OrderID)
+	if err != nil {
+		writeAppError(c, err)
+		return
+	}
+	OK(c, viewOrder(out))
+}
+
+func (h *Handlers) AdminReconcileOffer(c *gin.Context) {
+	if h.ReconSvc == nil {
+		writeAppError(c, domain.ErrNotImplemented)
+		return
+	}
+	apply := c.Request.Method == http.MethodPost || c.Query("apply") == "true" || c.Query("apply") == "1"
+	out, err := h.ReconSvc.Run(c.Request.Context(), c.Query("tenant_id"), apply)
+	if err != nil {
+		writeAppError(c, err)
+		return
+	}
+	OK(c, out)
+}
+
+func (h *Handlers) AdminOutbox(c *gin.Context) {
+	limit, _ := strconv.Atoi(c.Query("limit"))
+	rows, err := h.QuerySvc.ListOutbox(c.Request.Context(), limit)
+	if err != nil {
+		writeAppError(c, err)
+		return
+	}
+	items := make([]gin.H, 0, len(rows))
+	for _, row := range rows {
+		item := gin.H{"event_id": row.EventID, "attempts": row.Attempts}
+		var ev domain.Event
+		if json.Unmarshal(row.Payload, &ev) == nil {
+			item["event_type"] = ev.EventType
+			item["tenant_id"] = ev.TenantID
+			item["occurred_at"] = ev.OccurredAt
+			if ev.Data != nil {
+				item["order_id"] = ev.Data["order_id"]
+			}
+		}
+		items = append(items, item)
+	}
+	OK(c, gin.H{"items": items})
 }
 
 func (h *Handlers) AdminSeed(c *gin.Context) {

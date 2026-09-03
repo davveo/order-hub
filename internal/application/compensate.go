@@ -79,7 +79,7 @@ func (w *CompensateWorker) handle(ctx context.Context, t port.CompensationTicket
 	case "after_paid":
 		return w.pay.RetryAfterPaid(ctx, t.TenantID, t.Ref)
 	case "offer_release":
-		return w.offer.Release(ctx, t.Ref, t.Payload, "order:"+t.Payload+":release")
+		return w.offer.Release(ctx, t.TenantID, t.Ref, t.Payload, "order:"+t.Payload+":release")
 	case "ledger_release":
 		return w.ledger.Release(ctx, t.Ref, "order:release:"+t.Payload)
 	case "fulfill_release":
@@ -92,7 +92,7 @@ func (w *CompensateWorker) handle(ctx context.Context, t port.CompensationTicket
 		}
 		return nil
 	case "offer_reverse":
-		return w.offer.Reverse(ctx, t.Payload, t.Ref, "order:"+t.Ref+":reverse")
+		return w.offer.Reverse(ctx, t.TenantID, t.Payload, t.Ref, 0, "order:"+t.Ref+":reverse")
 	default:
 		return nil
 	}

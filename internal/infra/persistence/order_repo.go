@@ -550,6 +550,33 @@ func (r *OrderRepo) MarkEventPublished(ctx context.Context, eventID string) erro
 		Updates(map[string]any{"published_at": now, "attempts": gorm.Expr("attempts + 1")}).Error
 }
 
+func (r *OrderRepo) ListForReconcile(ctx context.Context, tenantID string, limit int) ([]domain.Order, error) {
+	if limit <= 0 {
+		limit = 200
+	}
+	q := r.db.WithContext(ctx).Where("reservation_id <> '' OR ledger_pay_amount > 0")
+	if tenantID != "" {
+		q = q.Where("tenant_id = ?", tenantID)
+	}
+	var pos []OrderPO
+	if err := q.Order("updated_at DESC").Limit(limit).Find(&pos).Error; err != nil {
+		return nil, err
+	}
+	out := make([]domain.Order, 0, len(pos))
+	for _, po := range pos {
+		out = append(out, *poToOrder(po, nil))
+	}
+	return out, nil
+}
+
+func (r *OrderRepo) HasOpenCompensation(ctx context.Context, kind, tenantID, ref string) (bool, error) {
+	var n int64
+	err := r.db.WithContext(ctx).Model(&CompensationPO{}).
+		Where("kind = ? AND tenant_id = ? AND ref = ? AND status IN ?", kind, tenantID, ref, []string{"pending", "running"}).
+		Count(&n).Error
+	return n > 0, err
+}
+
 func mapUnique(err error) error {
 	if err == nil {
 		return nil

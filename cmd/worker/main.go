@@ -27,10 +27,12 @@ func main() {
 	tickOutbox := time.NewTicker(500 * time.Millisecond)
 	tickComp := time.NewTicker(2 * time.Second)
 	tickRenew := time.NewTicker(15 * time.Second)
+	tickRecon := time.NewTicker(30 * time.Second)
 	defer tickTimeout.Stop()
 	defer tickOutbox.Stop()
 	defer tickComp.Stop()
 	defer tickRenew.Stop()
+	defer tickRecon.Stop()
 
 	for {
 		select {
@@ -64,6 +66,16 @@ func main() {
 				log.Printf("renew worker: %v", err)
 			} else if n > 0 {
 				log.Printf("renewed %d reservations", n)
+			}
+		case <-tickRecon.C:
+			if rt.Recon == nil {
+				continue
+			}
+			out, err := rt.Recon.Run(ctx, "", true)
+			if err != nil {
+				log.Printf("offer recon: %v", err)
+			} else if out != nil && len(out.Diffs) > 0 {
+				log.Printf("offer recon scanned %d diffs %d", out.Scanned, len(out.Diffs))
 			}
 		}
 	}

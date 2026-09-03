@@ -38,6 +38,8 @@ services:
       MOCK_DEPENDENCIES: "true"
       AUTO_MIGRATE: "false"
       ADMIN_TOKEN: dev-admin
+      # OFFER_HUB_URL: http://host.docker.internal:8081
+      # SERVICE_API_KEY: ""
     depends_on:
       postgres:
         condition: service_healthy

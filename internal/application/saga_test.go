@@ -147,7 +147,7 @@ func TestPointMallLedgerConfirm(t *testing.T) {
 	_, checkout, _, pay, _, _, ident := testHarness()
 	created, err := checkout.Checkout(ctx, ident, application.CheckoutCmd{
 		ClientOrderID: "cli_point", Scene: "point_mall", Channel: "app",
-		Items: []domain.OrderLine{{LineID: "l1", ObjectType: "sku_point", ObjectID: "p1", Quantity: 1, UnitPrice: 500}},
+		Items:          []domain.OrderLine{{LineID: "l1", ObjectType: "sku_point", ObjectID: "p1", Quantity: 1, UnitPrice: 500}},
 		IdempotencyKey: "k_point",
 	})
 	if err != nil {
@@ -252,12 +252,12 @@ type commitOnceFail struct {
 	n int
 }
 
-func (c *commitOnceFail) Commit(ctx context.Context, reservationID, orderID, idemKey string) (string, error) {
+func (c *commitOnceFail) Commit(ctx context.Context, tenantID, reservationID, orderID, idemKey string) (string, error) {
 	c.n++
 	if c.n == 1 {
 		return "", fmt.Errorf("commit down")
 	}
-	return c.OfferClient.Commit(ctx, reservationID, orderID, idemKey)
+	return c.OfferClient.Commit(ctx, tenantID, reservationID, orderID, idemKey)
 }
 
 func TestAfterPaidCompensationRetry(t *testing.T) {
@@ -409,5 +409,89 @@ func TestReservationRenew(t *testing.T) {
 	}
 	if offer.RenewCount(created.ReservationID) != 1 {
 		t.Fatalf("offer renew %d", offer.RenewCount(created.ReservationID))
+	}
+}
+
+func TestOfferReconCommitGap(t *testing.T) {
+	ctx := context.Background()
+	scenes := domain.DefaultScenes()
+	repo := memory.NewOrderRepo()
+	offer := offerclient.NewMock()
+	ledger := ledgerclient.NewMock()
+	payAd := payment.NewMock()
+	fulfill := fulfillment.NewRegistry(scenes)
+	ids := &seqID{}
+	clk := clock.System{}
+	checkout := application.NewCheckoutService(scenes, repo, offer, ledger, payAd, fulfill, cache.NewPreviewStore(nil), ids, clk, cache.NewLocker(nil))
+	paySvc := application.NewPaymentService(scenes, repo, offer, ledger, payAd, fulfill, ids, clk)
+	ident := &port.Identity{UserID: "u_1", TenantID: "t1"}
+	created, err := checkout.Checkout(ctx, ident, application.CheckoutCmd{
+		ClientOrderID: "cli_recon", Scene: "mall_checkout", CouponIDs: []string{"coupon_001"},
+		Items: mallItems(), IdempotencyKey: "k_recon",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := paySvc.OnPaymentCallback(ctx, application.PaymentCallback{
+		OrderID: created.OrderID, TenantID: ident.TenantID, Success: true,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	offer.ForceStatus(created.ReservationID, offerclient.ReservationActive)
+	recon := application.NewReconService(repo, offer)
+	out, err := recon.Run(ctx, ident.TenantID, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(out.Diffs) == 0 {
+		t.Fatal("expected commit gap")
+	}
+	found := false
+	for _, d := range out.Diffs {
+		if d.Kind == "offer_commit_missing" && d.TicketCreated {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("diffs %+v", out.Diffs)
+	}
+}
+
+func TestCloseMembershipAfterPaid(t *testing.T) {
+	ctx := context.Background()
+	scenes := domain.DefaultScenes()
+	repo := memory.NewOrderRepo()
+	offer := offerclient.NewMock()
+	ledger := ledgerclient.NewMock()
+	payAd := payment.NewMock()
+	fulfill := fulfillment.NewRegistry(scenes)
+	ids := &seqID{}
+	clk := clock.System{}
+	checkout := application.NewCheckoutService(scenes, repo, offer, ledger, payAd, fulfill, cache.NewPreviewStore(nil), ids, clk, cache.NewLocker(nil))
+	paySvc := application.NewPaymentService(scenes, repo, offer, ledger, payAd, fulfill, ids, clk)
+	closeSvc := application.NewCloseService(scenes, repo, offer, ledger, fulfill, ids, clk)
+	ident := &port.Identity{UserID: "u_1", TenantID: "t1"}
+	created, err := checkout.Checkout(ctx, ident, application.CheckoutCmd{
+		ClientOrderID: "cli_close", Scene: "membership",
+		Items:          []domain.OrderLine{{LineID: "l1", ObjectType: "membership", ObjectID: "mem_year", Quantity: 1, UnitPrice: 19900}},
+		IdempotencyKey: "k_close",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := paySvc.OnPaymentCallback(ctx, application.PaymentCallback{
+		OrderID: created.OrderID, TenantID: ident.TenantID, Success: true,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	got, err := closeSvc.Close(ctx, ident, created.OrderID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Status != domain.StatusClosed {
+		t.Fatalf("status %s", got.Status)
+	}
+	if _, err := closeSvc.Close(ctx, ident, created.OrderID); err != nil {
+		t.Fatalf("idempotent close: %v", err)
 	}
 }

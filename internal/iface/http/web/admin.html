@@ -99,6 +99,7 @@
       <button data-tab="checkout" onclick="tab('checkout')">测试下单</button>
       <button data-tab="demo" onclick="tab('demo')">API Demo</button>
       <button data-tab="tickets" onclick="tab('tickets')">补偿工单</button>
+      <button data-tab="recon" onclick="tab('recon')">Offer 对账</button>
     </nav>
   </aside>
   <main class="main">
@@ -122,7 +123,7 @@
         <select id="f-status">
           <option value="">全部状态</option>
           <option>PENDING_PAY</option><option>PAID</option><option>FULFILLING</option>
-          <option>COMPLETED</option><option>CANCELLED</option><option>COMPENSATING</option>
+          <option>COMPLETED</option><option>CANCELLED</option><option>CLOSED</option><option>COMPENSATING</option>
           <option>REFUNDING</option><option>REFUNDED</option><option>PARTIAL_REFUNDED</option>
         </select>
         <select id="f-scene">
@@ -182,6 +183,7 @@
               <button class="btn" onclick="doMockPay()">模拟支付成功</button>
               <button class="btn" onclick="doConfirmLedger()">账本确认</button>
               <button class="btn" onclick="doUserAct('complete')">履约完成</button>
+              <button class="btn" onclick="doUserAct('close')">支付后关单</button>
               <button class="btn danger" onclick="doUserAct('cancel')">取消</button>
             </div>
           </div>
@@ -230,13 +232,37 @@
         </table>
       </div>
     </section>
+    <section id="view-recon" style="display:none">
+      <div class="filters">
+        <input id="r-tenant" placeholder="tenant_id（可空=全租户）"/>
+        <button class="btn" onclick="loadRecon(false)">只扫描</button>
+        <button class="btn primary" onclick="loadRecon(true)">扫描并开单</button>
+        <span id="recon-msg" class="ok"></span>
+      </div>
+      <div class="split">
+        <div class="panel">
+          <h3>OfferHub L1 差异</h3>
+          <table>
+            <thead><tr><th>order</th><th>status</th><th>kind</th><th>rsv</th><th>说明</th></tr></thead>
+            <tbody id="recon-rows"></tbody>
+          </table>
+        </div>
+        <div class="panel">
+          <h3>未投递 Outbox</h3>
+          <table>
+            <thead><tr><th>event</th><th>type</th><th>order</th><th>attempts</th></tr></thead>
+            <tbody id="outbox-rows"></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
   </main>
 </div>
 <script>
 const TOKEN_KEY = 'oh_admin_token';
 let current = null, nextCursor = '', orderItems = [], lastOrder = null, demoCur = null;
 const pillColor = {
-  PENDING_PAY: '#d97706', PAID: '#059669', FULFILLING: '#0891b2', COMPLETED: '#7c3aed',
+  PENDING_PAY: '#d97706', PAID: '#059669', FULFILLING: '#0891b2',   COMPLETED: '#7c3aed', CLOSED: '#475569',
   CANCELLED: '#6b7280', COMPENSATING: '#ea580c', REFUNDING: '#dc2626', REFUNDED: '#dc2626',
   PARTIAL_REFUNDED: '#dc2626', pending: '#d97706', running: '#0891b2', done: '#059669', failed: '#dc2626'
 };
@@ -272,6 +298,7 @@ const DEMOS = [
   {g:'用户', m:'POST', p:'/api/v1/orders/{order_id}/confirm-ledger', a:'user'},
   {g:'用户', m:'POST', p:'/api/v1/orders/{order_id}/complete', a:'user'},
   {g:'用户', m:'POST', p:'/api/v1/orders/{order_id}/renew', a:'user'},
+  {g:'用户', m:'POST', p:'/api/v1/orders/{order_id}/close', a:'user'},
   {g:'用户', m:'POST', p:'/api/v1/orders/{order_id}/refunds', a:'user', b:{reason:'demo refund'}},
   {g:'内部', m:'POST', p:'/internal/v1/orders/callbacks/payment', a:'none', b:{order_id:'{order_id}', tenant_id:'tenant_001', success:true}},
   {g:'内部', m:'GET', p:'/internal/v1/compensations', a:'none'},
@@ -283,8 +310,12 @@ const DEMOS = [
   {g:'运营', m:'POST', p:'/admin/v1/orders/{order_id}/confirm-ledger', a:'admin'},
   {g:'运营', m:'POST', p:'/admin/v1/orders/{order_id}/renew', a:'admin'},
   {g:'运营', m:'POST', p:'/admin/v1/orders/{order_id}/retry-paid', a:'admin'},
+  {g:'运营', m:'POST', p:'/admin/v1/orders/{order_id}/close', a:'admin'},
   {g:'运营', m:'POST', p:'/admin/v1/orders/{order_id}/refunds', a:'admin', b:{reason:'admin refund'}},
   {g:'运营', m:'GET', p:'/admin/v1/compensations', a:'admin'},
+  {g:'运营', m:'GET', p:'/admin/v1/reconcile/offer', a:'admin'},
+  {g:'运营', m:'POST', p:'/admin/v1/reconcile/offer', a:'admin'},
+  {g:'运营', m:'GET', p:'/admin/v1/outbox', a:'admin'},
   {g:'运营', m:'POST', p:'/admin/v1/seed', a:'admin'}
 ];
 function token(){ return localStorage.getItem(TOKEN_KEY) || ''; }
@@ -315,10 +346,10 @@ function pill(st){
   const c = pillColor[st] || '#6b7280';
   return `<span class="pill" style="color:${c};border-color:${c}55">${st||'-'}</span>`;
 }
-const TITLES = {overview:'概览', orders:'订单单据', checkout:'测试下单', demo:'API Demo', tickets:'补偿工单'};
+const TITLES = {overview:'概览', orders:'订单单据', checkout:'测试下单', demo:'API Demo', tickets:'补偿工单', recon:'Offer 对账'};
 function tab(name){
   document.querySelectorAll('.nav button').forEach(b=>b.classList.toggle('on', b.dataset.tab===name));
-  ['overview','orders','checkout','demo','tickets'].forEach(id=>{
+  ['overview','orders','checkout','demo','tickets','recon'].forEach(id=>{
     document.getElementById('view-'+id).style.display = id===name ? '' : 'none';
   });
   document.getElementById('title').textContent = TITLES[name];
@@ -327,6 +358,7 @@ function tab(name){
   if (name==='checkout') { if (!document.getElementById('c-items').value) applyPreset(); if (!document.getElementById('c-cli').value) document.getElementById('c-cli').value = 'cli_'+Date.now(); }
   if (name==='demo') renderDemos();
   if (name==='tickets') loadTickets();
+  if (name==='recon') { loadRecon(false); loadOutbox(); }
 }
 async function loadStats(){
   const s = await req('/admin/v1/stats');
@@ -335,6 +367,7 @@ async function loadStats(){
     ['待支付', orders.PENDING_PAY||0], ['已支付', orders.PAID||0],
     ['履约中', orders.FULFILLING||0], ['已完成', orders.COMPLETED||0],
     ['补偿中', orders.COMPENSATING||0], ['已取消', orders.CANCELLED||0],
+    ['已关闭', orders.CLOSED||0],
     ['已退 / 部分退', (orders.REFUNDED||0)+' / '+(orders.PARTIAL_REFUNDED||0)],
     ['工单 pending', comps.pending||0], ['未投递事件', s.unpublished_events||0]
   ];
@@ -401,6 +434,7 @@ async function openOrder(id){
     <button class="btn" onclick="act('confirm-ledger')">账本确认</button>
     <button class="btn" onclick="act('retry-paid')">重试支付后编排</button>
     <button class="btn" onclick="refund()">退款</button>
+    <button class="btn" onclick="act('close')">支付后关单</button>
     <button class="btn danger" onclick="act('cancel')">取消关单</button>
   </div>
   <div id="act-err" class="err"></div>`;
@@ -547,6 +581,36 @@ async function loadTickets(){
 async function retryTicket(id){
   await req('/admin/v1/compensations/'+id+'/retry', {method:'POST', body:{}});
   await loadTickets();
+}
+async function loadRecon(apply){
+  const tn = document.getElementById('r-tenant').value.trim();
+  const q = tn ? ('?tenant_id='+encodeURIComponent(tn)) : '';
+  const el = document.getElementById('recon-msg');
+  try {
+    const data = await req('/admin/v1/reconcile/offer'+q, apply ? {method:'POST', body:{}} : {});
+    const diffs = data.diffs || [];
+    el.textContent = '扫描 '+ (data.scanned||0) + ' 笔，差异 '+diffs.length + (apply ? '（已开单）' : '');
+    document.getElementById('recon-rows').innerHTML = diffs.map(d=>`<tr>
+      <td>${d.order_id||''}</td><td>${pill(d.order_status)}</td>
+      <td>${d.kind||''}</td><td>${d.reservation_id||''}</td>
+      <td>${d.message||''}${d.ticket_created?' · 已开单':''}</td>
+    </tr>`).join('') || '<tr><td colspan="5" class="empty">没有差异</td></tr>';
+  } catch (e) {
+    el.textContent = '';
+    document.getElementById('recon-rows').innerHTML = '<tr><td colspan="5" class="err">'+e.message+'</td></tr>';
+  }
+}
+async function loadOutbox(){
+  try {
+    const data = await req('/admin/v1/outbox?limit=50');
+    const items = data.items || [];
+    document.getElementById('outbox-rows').innerHTML = items.map(e=>`<tr>
+      <td>${e.event_id||''}</td><td>${e.event_type||''}</td>
+      <td>${e.order_id||''}</td><td>${e.attempts||0}</td>
+    </tr>`).join('') || '<tr><td colspan="4" class="empty">队列为空</td></tr>';
+  } catch (e) {
+    document.getElementById('outbox-rows').innerHTML = '<tr><td colspan="4" class="err">'+e.message+'</td></tr>';
+  }
 }
 async function boot(){
   try {

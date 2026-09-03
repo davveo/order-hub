@@ -5,6 +5,8 @@ import (
 	"net/http"
 	"strings"
 	"testing"
+
+	"github.com/davveo/order-hub/internal/domain"
 )
 
 func TestDecodeEnvelopeAndRaw(t *testing.T) {
@@ -24,5 +26,10 @@ func TestDecodeEnvelopeAndRaw(t *testing.T) {
 	}
 	if out["freeze_id"] != "fz_2" {
 		t.Fatalf("%v", out)
+	}
+
+	resp = &http.Response{StatusCode: 404, Body: io.NopCloser(strings.NewReader(`{"error":{"code":"NOT_FOUND","message":"占用不存在"}}`))}
+	if err := Decode(resp, &out); err != domain.ErrOrderNotFound {
+		t.Fatalf("offer error envelope: %v", err)
 	}
 }

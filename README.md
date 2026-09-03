@@ -15,7 +15,7 @@
 - 列表使用 keyset cursor，禁止深分页 OFFSET
 - 超时关单走部分索引 `PENDING_PAY + expire_at`；多 worker 靠 CAS 抢胜
 - Postgres 连接池 / GORM PrepareStmt；Redis 连接池
-- 下游 RPC 800ms 超时；失败逆序补偿，补偿幂等
+- 下游 RPC 2s 超时；失败逆序补偿，补偿幂等
 
 ## 本地运行
 
@@ -57,13 +57,13 @@ POST /internal/v1/orders/callbacks/payment
 
 纯积分场景 `point_mall` 下单后调用 `POST /api/v1/orders/{id}/confirm-ledger`。
 
-支付中续期：`POST /api/v1/orders/{id}/renew`。补偿工单：`GET /internal/v1/compensations`、`POST /internal/v1/compensations/{id}/retry`。Worker 会扫超时关单、Outbox、补偿和 reservation renew。
+支付中续期：`POST /api/v1/orders/{id}/renew`。会员/课程/SaaS 支付后关单：`POST /api/v1/orders/{id}/close`。补偿工单：`GET /internal/v1/compensations`、`POST /internal/v1/compensations/{id}/retry`。Worker 会扫超时关单、Outbox、补偿、reservation renew 和 OfferHub L1 对账。
 
 ## 运营后台
 
 浏览器打开 `http://localhost:8080`（`/admin` 同样入口），Token 默认 `dev-admin`（环境变量 `ADMIN_TOKEN`）。
 
-亮色控制台包含：概览与造数、订单单据、测试下单、API Demo、补偿工单。概览里点「生成演示数据」会写入约 24 笔覆盖各场景/状态的订单。
+亮色控制台包含：概览与造数、订单单据、测试下单、API Demo、补偿工单、Offer 对账。概览里点「生成演示数据」会写入约 24 笔覆盖各场景/状态的订单。
 
 
 ## API
@@ -81,6 +81,7 @@ POST /internal/v1/orders/callbacks/payment
 | POST | /api/v1/orders/{id}/confirm-ledger | 纯账本确认 |
 | POST | /api/v1/orders/{id}/complete | 履约完成 |
 | POST | /api/v1/orders/{id}/refunds | 售后 |
+| POST | /api/v1/orders/{id}/close | 支付后关单（membership/course/saas） |
 | POST | /internal/v1/orders/callbacks/payment | 渠道回告 |
 | GET | /admin | 运营后台页面 |
 | GET | /admin/v1/stats | 状态统计 |
@@ -91,14 +92,23 @@ POST /internal/v1/orders/callbacks/payment
 | POST | /admin/v1/orders/{id}/confirm-ledger | 账本确认 |
 | POST | /admin/v1/orders/{id}/renew | 续期优惠占用 |
 | POST | /admin/v1/orders/{id}/retry-paid | 重试支付后编排 |
+| POST | /admin/v1/orders/{id}/close | 支付后关单 |
 | POST | /admin/v1/orders/{id}/refunds | 运营退款 |
 | GET | /admin/v1/compensations | 补偿工单 |
 | POST | /admin/v1/compensations/{id}/retry | 重试工单 |
+| GET/POST | /admin/v1/reconcile/offer | OfferHub L1 对账（POST 自动开补偿工单） |
+| GET | /admin/v1/outbox | 未投递事件 |
 
 ## 接入真实中台
 
 设置 `MOCK_DEPENDENCIES=false`，并配置：
 
 - `AUTH_HUB_URL` `POST /api/v1/auth/introspect`
-- `OFFER_HUB_URL` `/api/discount/v1/quotes|reservations|...`
+- `OFFER_HUB_URL` 真实 OfferHub，前缀 `/api/discount/v1`。客户端会带 `X-Tenant-Id`、写接口 `Idempotency-Key`，Quote 使用 `selected_coupon_ids` / `transaction.channel`
 - `LEDGER_HUB_URL` Freeze / Capture / Release / Credit
+- `SERVICE_API_KEY` 对应 OfferHub `X-API-Key`（开发环境可空，生产必填）
+- `PAYMENT_CALLBACK_SECRET` 非 Mock 时必填，回告头 `X-Payment-Signature`
+- `EVENT_WEBHOOK_URL` 可选，Outbox 以 HTTP POST 投递 `order.*.v1`
+
+本机 Docker 访问宿主 OfferHub 常用 `OFFER_HUB_URL=http://host.docker.internal:8081`（两边都默认 8080 时把 OfferHub 换端口）。
+Worker 每 30s 扫 L1：已付仍 `ACTIVE` 的占用补 `after_paid` 工单，已取消仍 `ACTIVE` 的补 `offer_release`。

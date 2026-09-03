@@ -60,7 +60,7 @@ func (s *RenewService) renewOne(ctx context.Context, o *domain.Order) error {
 		return fmt.Errorf("%w: renew limit", domain.ErrStatusNotAllowed)
 	}
 	n := o.RenewCount + 1
-	if err := s.offer.Renew(ctx, o.Promotion.ReservationID, o.OrderID, fmt.Sprintf("order:%s:renew:%d", o.OrderID, n)); err != nil {
+	if err := s.offer.Renew(ctx, o.TenantID, o.Promotion.ReservationID, o.OrderID, fmt.Sprintf("order:%s:renew:%d", o.OrderID, n)); err != nil {
 		return err
 	}
 	return s.repo.BumpRenew(ctx, o.TenantID, o.OrderID, o.RenewCount)

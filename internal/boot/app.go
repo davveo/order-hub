@@ -34,6 +34,7 @@ type Runtime struct {
 	Outbox     *application.OutboxWorker
 	Compensate *application.CompensateWorker
 	Renew      *application.RenewService
+	Recon      *application.ReconService
 	Close      func()
 }
 
@@ -110,7 +111,9 @@ func Build(cfg conf.Config) (*Runtime, error) {
 	paySvc := application.NewPaymentService(scenes, repo, offer, ledger, pay, fulfill, ids, clk)
 	refundSvc := application.NewRefundService(repo, offer, ledger, pay, ids, clk)
 	renewSvc := application.NewRenewService(repo, offer, clk)
+	closeSvc := application.NewCloseService(scenes, repo, offer, ledger, fulfill, ids, clk)
 	compensate := application.NewCompensateWorker(repo, paySvc, offer, ledger, fulfill, clk)
+	reconSvc := application.NewReconService(repo, offer)
 	seedSvc := application.NewSeedService(checkoutSvc, paySvc, cancelSvc, refundSvc)
 
 	readyFn := func(ctx context.Context) error {
@@ -125,27 +128,31 @@ func Build(cfg conf.Config) (*Runtime, error) {
 	}
 
 	h := &httpserver.Handlers{
-		PreviewSvc:  previewSvc,
-		CheckoutSvc: checkoutSvc,
-		QuerySvc:    querySvc,
-		CancelSvc:   cancelSvc,
-		PaymentSvc:  paySvc,
-		RefundSvc:   refundSvc,
-		RenewSvc:    renewSvc,
-		Compensate:  compensate,
-		SeedSvc:     seedSvc,
-		PaySecret:   cfg.PaymentCallbackSK,
-		ReadyFn:     readyFn,
-		AdminToken:  cfg.AdminToken,
+		PreviewSvc:       previewSvc,
+		CheckoutSvc:      checkoutSvc,
+		QuerySvc:         querySvc,
+		CancelSvc:        cancelSvc,
+		PaymentSvc:       paySvc,
+		RefundSvc:        refundSvc,
+		RenewSvc:         renewSvc,
+		CloseSvc:         closeSvc,
+		Compensate:       compensate,
+		ReconSvc:         reconSvc,
+		SeedSvc:          seedSvc,
+		PaySecret:        cfg.PaymentCallbackSK,
+		AllowUnsignedPay: cfg.MockDeps,
+		ReadyFn:          readyFn,
+		AdminToken:       cfg.AdminToken,
 	}
 
 	return &Runtime{
 		Config:     cfg,
 		Engine:     httpserver.NewRouter(h, auth),
 		Timeout:    application.NewTimeoutWorker(repo, cancelSvc, clk),
-		Outbox:     application.NewOutboxWorker(repo, outbox.LogPublisher{}),
+		Outbox:     application.NewOutboxWorker(repo, outbox.NewPublisher(cfg.EventWebhookURL, cfg.LogOutbox)),
 		Compensate: compensate,
 		Renew:      renewSvc,
+		Recon:      reconSvc,
 		Close: func() {
 			if rdb != nil {
 				_ = rdb.Close()

@@ -20,12 +20,14 @@ type Config struct {
 	PaymentCallbackSK string
 	LogOutbox         bool
 	AdminToken        string
+	EventWebhookURL   string
 }
 
 func Load() Config {
 	c := Config{
-		HTTPAddr:          env("HTTP_ADDR", ":8080"),
-		PostgresDSN:       env("POSTGRES_DSN", "host=127.0.0.1 user=order password=order dbname=order_hub port=5432 sslmode=disable TimeZone=UTC"),
+		HTTPAddr: env("HTTP_ADDR", ":8080"),
+		PostgresDSN: env("POSTGRES_DSN", "host=127.0.0.1 user=order "+
+			"password=order dbname=order_hub port=5432 sslmode=disable TimeZone=UTC"),
 		RedisAddr:         env("REDIS_ADDR", ""),
 		RedisPassword:     env("REDIS_PASSWORD", ""),
 		MockDeps:          envBool("MOCK_DEPENDENCIES", true),
@@ -37,6 +39,7 @@ func Load() Config {
 		PaymentCallbackSK: env("PAYMENT_CALLBACK_SECRET", ""),
 		LogOutbox:         envBool("LOG_OUTBOX", true),
 		AdminToken:        env("ADMIN_TOKEN", "dev-admin"),
+		EventWebhookURL:   env("EVENT_WEBHOOK_URL", ""),
 	}
 	return c
 }

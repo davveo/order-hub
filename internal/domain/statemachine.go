@@ -17,7 +17,7 @@ var transitions = map[Status][]Status{
 	StatusPendingPay:      {StatusPaid, StatusCancelled},
 	StatusPaid:            {StatusFulfilling, StatusCompleted, StatusRefunding, StatusRefunded, StatusPartialRefunded, StatusCompensating, StatusClosed},
 	StatusFulfilling:      {StatusCompleted, StatusRefunding, StatusRefunded, StatusPartialRefunded, StatusClosed},
-	StatusCompleted:       {StatusRefunding, StatusRefunded, StatusPartialRefunded},
+	StatusCompleted:       {StatusRefunding, StatusRefunded, StatusPartialRefunded, StatusClosed},
 	StatusRefunding:       {StatusRefunded, StatusPartialRefunded, StatusCompleted, StatusFulfilling},
 	StatusPartialRefunded: {StatusRefunding, StatusRefunded},
 	StatusCompensating:    {StatusPaid, StatusCompleted, StatusFulfilling},

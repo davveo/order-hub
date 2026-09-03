@@ -195,10 +195,26 @@ func TestAdminConsole(t *testing.T) {
 		t.Fatalf("seed body %s", w.Body.String())
 	}
 
+	req = httptest.NewRequest(http.MethodGet, "/admin/v1/reconcile/offer", nil)
+	req.Header.Set("X-Admin-Token", "dev-admin")
+	w = httptest.NewRecorder()
+	rt.Engine.ServeHTTP(w, req)
+	if w.Code != 200 {
+		t.Fatalf("reconcile %d %s", w.Code, w.Body.String())
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/admin/v1/outbox", nil)
+	req.Header.Set("X-Admin-Token", "dev-admin")
+	w = httptest.NewRecorder()
+	rt.Engine.ServeHTTP(w, req)
+	if w.Code != 200 {
+		t.Fatalf("outbox %d %s", w.Code, w.Body.String())
+	}
+
 	req = httptest.NewRequest(http.MethodGet, "/admin", nil)
 	w = httptest.NewRecorder()
 	rt.Engine.ServeHTTP(w, req)
-	if !bytes.Contains(w.Body.Bytes(), []byte("测试下单")) || !bytes.Contains(w.Body.Bytes(), []byte("API Demo")) {
-		t.Fatalf("admin page missing checkout/demo")
+	if !bytes.Contains(w.Body.Bytes(), []byte("测试下单")) || !bytes.Contains(w.Body.Bytes(), []byte("Offer 对账")) {
+		t.Fatalf("admin page missing checkout/recon")
 	}
 }
