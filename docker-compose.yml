@@ -9,7 +9,7 @@ services:
       - "5432:5432"
     volumes:
       - order_hub_pg:/var/lib/postgresql/data
-      - ./migrations/0001_init.sql:/docker-entrypoint-initdb.d/0001_init.sql:ro
+      - ./migrations:/docker-entrypoint-initdb.d:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U order -d order_hub"]
       interval: 5s
@@ -20,6 +20,51 @@ services:
     image: redis:7-alpine
     ports:
       - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  api:
+    build: .
+    command: ["order-hub-api"]
+    ports:
+      - "8080:8080"
+    environment:
+      HTTP_ADDR: ":8080"
+      POSTGRES_DSN: host=postgres user=order password=order dbname=order_hub port=5432 sslmode=disable TimeZone=UTC
+      REDIS_ADDR: redis:6379
+      MOCK_DEPENDENCIES: "true"
+      AUTO_MIGRATE: "false"
+      ADMIN_TOKEN: dev-admin
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8080/healthz"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+      start_period: 5s
+
+  worker:
+    build: .
+    command: ["order-hub-worker"]
+    environment:
+      POSTGRES_DSN: host=postgres user=order password=order dbname=order_hub port=5432 sslmode=disable TimeZone=UTC
+      REDIS_ADDR: redis:6379
+      MOCK_DEPENDENCIES: "true"
+      AUTO_MIGRATE: "false"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      api:
+        condition: service_healthy
 
 volumes:
   order_hub_pg:

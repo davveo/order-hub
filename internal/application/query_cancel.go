@@ -47,6 +47,40 @@ func (s *QueryService) List(ctx context.Context, ident *port.Identity, status, s
 	return s.repo.ListByBuyer(ctx, ident.TenantID, ident.UserID, st, scene, cursor, limit)
 }
 
+type AdminStats struct {
+	Orders            map[string]int64 `json:"orders"`
+	Compensations     map[string]int64 `json:"compensations"`
+	UnpublishedEvents int64            `json:"unpublished_events"`
+}
+
+func (s *QueryService) AdminList(ctx context.Context, f port.AdminListFilter) ([]domain.Order, string, error) {
+	if f.Limit <= 0 || f.Limit > 100 {
+		f.Limit = 20
+	}
+	if f.Status != "" {
+		if _, ok := domain.ParseStatus(string(f.Status)); !ok {
+			return nil, "", fmt.Errorf("%w: status", domain.ErrInvalidArgument)
+		}
+	}
+	return s.repo.AdminList(ctx, f)
+}
+
+func (s *QueryService) AdminStats(ctx context.Context, tenantID string) (*AdminStats, error) {
+	orders, err := s.repo.CountOrdersByStatus(ctx, tenantID)
+	if err != nil {
+		return nil, err
+	}
+	comps, err := s.repo.CountCompensationsByStatus(ctx)
+	if err != nil {
+		return nil, err
+	}
+	n, err := s.repo.CountUnpublishedEvents(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return &AdminStats{Orders: orders, Compensations: comps, UnpublishedEvents: n}, nil
+}
+
 type CancelService struct {
 	scenes  map[string]domain.SceneConfig
 	repo    port.OrderRepository

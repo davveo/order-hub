@@ -21,8 +21,10 @@ type Handlers struct {
 	RefundSvc   *application.RefundService
 	RenewSvc    *application.RenewService
 	Compensate  *application.CompensateWorker
+	SeedSvc     *application.SeedService
 	PaySecret   string
 	ReadyFn     func(ctx context.Context) error
+	AdminToken  string
 }
 
 func (h *Handlers) Preview(c *gin.Context) {
@@ -84,7 +86,8 @@ func (h *Handlers) Get(c *gin.Context) {
 
 func (h *Handlers) List(c *gin.Context) {
 	limit, _ := strconv.Atoi(c.Query("limit"))
-	items, cursor, err := h.QuerySvc.List(c.Request.Context(), identity(c), c.Query("status"), c.Query("scene"), c.Query("cursor"), limit)
+	items, cursor, err := h.QuerySvc.List(c.Request.Context(), identity(c),
+		c.Query("status"), c.Query("scene"), c.Query("cursor"), limit)
 	if err != nil {
 		writeAppError(c, err)
 		return

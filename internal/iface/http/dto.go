@@ -88,6 +88,8 @@ func toLedger(p *ledgerPayDTO) *application.LedgerPay {
 type orderView struct {
 	OrderID          string         `json:"order_id"`
 	ClientOrderID    string         `json:"client_order_id"`
+	TenantID         string         `json:"tenant_id"`
+	BuyerUserID      string         `json:"buyer_user_id,omitempty"`
 	Scene            string         `json:"scene"`
 	Channel          string         `json:"channel"`
 	Status           string         `json:"status"`
@@ -121,6 +123,8 @@ func viewOrder(o *domain.Order) orderView {
 	v := orderView{
 		OrderID:          o.OrderID,
 		ClientOrderID:    o.ClientOrderID,
+		TenantID:         o.TenantID,
+		BuyerUserID:      o.BuyerUserID,
 		Scene:            o.Scene,
 		Channel:          o.Channel,
 		Status:           string(o.Status),

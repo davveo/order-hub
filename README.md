@@ -20,8 +20,9 @@
 ## 本地运行
 
 ```bash
-docker compose up -d          # 可选：Postgres + Redis
+make up                       # Postgres + Redis + API(:8080) + Worker
 make test
+# 本机直接跑（不走 Docker API）：
 MOCK_DEPENDENCIES=true POSTGRES_DSN=memory make run-api
 ```
 
@@ -58,6 +59,12 @@ POST /internal/v1/orders/callbacks/payment
 
 支付中续期：`POST /api/v1/orders/{id}/renew`。补偿工单：`GET /internal/v1/compensations`、`POST /internal/v1/compensations/{id}/retry`。Worker 会扫超时关单、Outbox、补偿和 reservation renew。
 
+## 运营后台
+
+浏览器打开 `http://localhost:8080`（`/admin` 同样入口），Token 默认 `dev-admin`（环境变量 `ADMIN_TOKEN`）。
+
+亮色控制台包含：概览与造数、订单单据、测试下单、API Demo、补偿工单。概览里点「生成演示数据」会写入约 24 笔覆盖各场景/状态的订单。
+
 
 ## API
 
@@ -75,6 +82,18 @@ POST /internal/v1/orders/callbacks/payment
 | POST | /api/v1/orders/{id}/complete | 履约完成 |
 | POST | /api/v1/orders/{id}/refunds | 售后 |
 | POST | /internal/v1/orders/callbacks/payment | 渠道回告 |
+| GET | /admin | 运营后台页面 |
+| GET | /admin/v1/stats | 状态统计 |
+| GET | /admin/v1/orders | 跨买家筛单 |
+| GET | /admin/v1/orders/{id} | 运营查单 |
+| POST | /admin/v1/orders/{id}/cancel | 运营关单 |
+| POST | /admin/v1/orders/{id}/complete | 履约完成 |
+| POST | /admin/v1/orders/{id}/confirm-ledger | 账本确认 |
+| POST | /admin/v1/orders/{id}/renew | 续期优惠占用 |
+| POST | /admin/v1/orders/{id}/retry-paid | 重试支付后编排 |
+| POST | /admin/v1/orders/{id}/refunds | 运营退款 |
+| GET | /admin/v1/compensations | 补偿工单 |
+| POST | /admin/v1/compensations/{id}/retry | 重试工单 |
 
 ## 接入真实中台
 

@@ -7,7 +7,8 @@ tidy:
 	go mod tidy
 
 up:
-	docker compose up -d
+	docker compose up -d --build
+	@echo "Console  http://localhost:8080  (token: dev-admin)"
 
 down:
 	docker compose down

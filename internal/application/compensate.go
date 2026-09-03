@@ -68,6 +68,9 @@ func (w *CompensateWorker) Retry(ctx context.Context, id int64) error {
 }
 
 func (w *CompensateWorker) List(ctx context.Context, status string, limit int) ([]port.CompensationTicket, error) {
+	if limit <= 0 || limit > 200 {
+		limit = 50
+	}
 	return w.repo.ListCompensations(ctx, status, limit)
 }
 

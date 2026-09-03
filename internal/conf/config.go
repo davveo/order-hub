@@ -19,6 +19,7 @@ type Config struct {
 	ServiceAPIKey     string
 	PaymentCallbackSK string
 	LogOutbox         bool
+	AdminToken        string
 }
 
 func Load() Config {
@@ -35,6 +36,7 @@ func Load() Config {
 		ServiceAPIKey:     env("SERVICE_API_KEY", ""),
 		PaymentCallbackSK: env("PAYMENT_CALLBACK_SECRET", ""),
 		LogOutbox:         envBool("LOG_OUTBOX", true),
+		AdminToken:        env("ADMIN_TOKEN", "dev-admin"),
 	}
 	return c
 }

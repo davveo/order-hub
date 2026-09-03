@@ -291,6 +291,84 @@ func (r *OrderRepo) ListByBuyer(ctx context.Context, tenantID, buyerID string, s
 	return out, next, nil
 }
 
+func (r *OrderRepo) AdminList(ctx context.Context, f port.AdminListFilter) ([]domain.Order, string, error) {
+	q := r.db.WithContext(ctx).Model(&OrderPO{})
+	if f.TenantID != "" {
+		q = q.Where("tenant_id = ?", f.TenantID)
+	}
+	if f.Status != "" {
+		q = q.Where("status = ?", string(f.Status))
+	}
+	if f.Scene != "" {
+		q = q.Where("scene = ?", f.Scene)
+	}
+	if f.Query != "" {
+		like := f.Query
+		q = q.Where("order_id = ? OR client_order_id = ? OR buyer_user_id = ?", like, like, like)
+	}
+	if f.Cursor != "" {
+		created, id, ok := splitCursor(f.Cursor)
+		if ok {
+			q = q.Where("(created_at, order_id) < (?, ?)", created, id)
+		}
+	}
+	var pos []OrderPO
+	if err := q.Order("created_at DESC, order_id DESC").Limit(f.Limit + 1).Find(&pos).Error; err != nil {
+		return nil, "", err
+	}
+	next := ""
+	if len(pos) > f.Limit {
+		last := pos[f.Limit-1]
+		next = last.CreatedAt.UTC().Format(time.RFC3339Nano) + "|" + last.OrderID
+		pos = pos[:f.Limit]
+	}
+	out := make([]domain.Order, 0, len(pos))
+	for _, po := range pos {
+		out = append(out, *poToOrder(po, nil))
+	}
+	return out, next, nil
+}
+
+func (r *OrderRepo) CountOrdersByStatus(ctx context.Context, tenantID string) (map[string]int64, error) {
+	q := r.db.WithContext(ctx).Model(&OrderPO{})
+	if tenantID != "" {
+		q = q.Where("tenant_id = ?", tenantID)
+	}
+	var rows []struct {
+		Status string
+		N      int64
+	}
+	if err := q.Select("status, count(*) as n").Group("status").Scan(&rows).Error; err != nil {
+		return nil, err
+	}
+	out := map[string]int64{}
+	for _, row := range rows {
+		out[row.Status] = row.N
+	}
+	return out, nil
+}
+
+func (r *OrderRepo) CountCompensationsByStatus(ctx context.Context) (map[string]int64, error) {
+	var rows []struct {
+		Status string
+		N      int64
+	}
+	if err := r.db.WithContext(ctx).Model(&CompensationPO{}).Select("status, count(*) as n").Group("status").Scan(&rows).Error; err != nil {
+		return nil, err
+	}
+	out := map[string]int64{}
+	for _, row := range rows {
+		out[row.Status] = row.N
+	}
+	return out, nil
+}
+
+func (r *OrderRepo) CountUnpublishedEvents(ctx context.Context) (int64, error) {
+	var n int64
+	err := r.db.WithContext(ctx).Model(&OutboxPO{}).Where("published_at IS NULL").Count(&n).Error
+	return n, err
+}
+
 func (r *OrderRepo) InsertRefund(ctx context.Context, o *domain.Order, refund domain.Refund, event domain.Event) error {
 	lines, _ := json.Marshal(refund.Lines)
 	return r.db.WithContext(ctx).Clauses(clause.OnConflict{DoNothing: true}).Create(&RefundPO{

@@ -3,6 +3,8 @@ package memory
 import (
 	"context"
 	"encoding/json"
+	"sort"
+	"strings"
 	"sync"
 	"time"
 
@@ -229,6 +231,82 @@ func (r *OrderRepo) ListByBuyer(_ context.Context, tenantID, buyerID string, sta
 	return out, "", nil
 }
 
+func (r *OrderRepo) AdminList(_ context.Context, f port.AdminListFilter) ([]domain.Order, string, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	var all []*domain.Order
+	for _, o := range r.orders {
+		if f.TenantID != "" && o.TenantID != f.TenantID {
+			continue
+		}
+		if f.Status != "" && o.Status != f.Status {
+			continue
+		}
+		if f.Scene != "" && o.Scene != f.Scene {
+			continue
+		}
+		if f.Query != "" && o.OrderID != f.Query && o.ClientOrderID != f.Query && o.BuyerUserID != f.Query {
+			continue
+		}
+		all = append(all, o)
+	}
+	out := make([]domain.Order, 0, len(all))
+	for _, o := range all {
+		out = append(out, *clone(o))
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if !out[i].CreatedAt.Equal(out[j].CreatedAt) {
+			return out[i].CreatedAt.After(out[j].CreatedAt)
+		}
+		return out[i].OrderID > out[j].OrderID
+	})
+	if f.Cursor != "" {
+		cut := -1
+		for i := range out {
+			if out[i].OrderID == f.Cursor || strings.HasSuffix(f.Cursor, "|"+out[i].OrderID) {
+				cut = i
+				break
+			}
+		}
+		if cut >= 0 {
+			out = out[cut+1:]
+		}
+	}
+	if f.Limit > 0 && len(out) > f.Limit {
+		return out[:f.Limit], out[f.Limit-1].OrderID, nil
+	}
+	return out, "", nil
+}
+
+func (r *OrderRepo) CountOrdersByStatus(_ context.Context, tenantID string) (map[string]int64, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	out := map[string]int64{}
+	for _, o := range r.orders {
+		if tenantID != "" && o.TenantID != tenantID {
+			continue
+		}
+		out[string(o.Status)]++
+	}
+	return out, nil
+}
+
+func (r *OrderRepo) CountCompensationsByStatus(_ context.Context) (map[string]int64, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	out := map[string]int64{}
+	for _, t := range r.tickets {
+		out[t.Status]++
+	}
+	return out, nil
+}
+
+func (r *OrderRepo) CountUnpublishedEvents(_ context.Context) (int64, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return int64(len(r.events)), nil
+}
+
 func (r *OrderRepo) InsertRefund(_ context.Context, _ *domain.Order, refund domain.Refund, _ domain.Event) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -288,7 +366,10 @@ func (r *OrderRepo) UpdateCompensation(_ context.Context, id int64, status, last
 func (r *OrderRepo) ListCompensations(_ context.Context, status string, limit int) ([]port.CompensationTicket, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	var out []port.CompensationTicket
+	if limit <= 0 {
+		limit = 50
+	}
+	out := make([]port.CompensationTicket, 0)
 	for i := len(r.tickets) - 1; i >= 0; i-- {
 		if status != "" && r.tickets[i].Status != status {
 			continue

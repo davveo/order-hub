@@ -9,8 +9,11 @@ func NewRouter(h *Handlers, auth port.AuthClient) *gin.Engine {
 	gin.SetMode(gin.ReleaseMode)
 	r := gin.New()
 	r.Use(Recover(), gin.Logger(), RequestID())
+	r.GET("/", h.AdminPage)
 	r.GET("/healthz", Health)
 	r.GET("/readyz", h.Ready)
+	r.GET("/admin", h.AdminPage)
+	r.GET("/admin/", h.AdminPage)
 
 	v1 := r.Group("/api/v1")
 	v1.Use(Auth(auth))
@@ -31,5 +34,22 @@ func NewRouter(h *Handlers, auth port.AuthClient) *gin.Engine {
 	internal.POST("/orders/callbacks/payment", h.PaymentCallback)
 	internal.GET("/compensations", h.ListCompensations)
 	internal.POST("/compensations/:id/retry", h.RetryCompensation)
+
+	admin := r.Group("/admin/v1")
+	admin.Use(AdminAuth(h.AdminToken))
+	{
+		admin.GET("/stats", h.AdminStats)
+		admin.GET("/orders", h.AdminListOrders)
+		admin.GET("/orders/:order_id", h.AdminGetOrder)
+		admin.POST("/orders/:order_id/cancel", h.AdminCancel)
+		admin.POST("/orders/:order_id/complete", h.AdminComplete)
+		admin.POST("/orders/:order_id/confirm-ledger", h.AdminConfirmLedger)
+		admin.POST("/orders/:order_id/renew", h.AdminRenew)
+		admin.POST("/orders/:order_id/retry-paid", h.AdminRetryPaid)
+		admin.POST("/orders/:order_id/refunds", h.AdminRefund)
+		admin.GET("/compensations", h.ListCompensations)
+		admin.POST("/compensations/:id/retry", h.RetryCompensation)
+		admin.POST("/seed", h.AdminSeed)
+	}
 	return r
 }

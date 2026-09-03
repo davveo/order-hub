@@ -1,0 +1,568 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Order Hub 运营后台</title>
+  <style>
+    :root {
+      --bg: #f4f6fb; --panel: #ffffff; --line: #e5e7ef;
+      --text: #1f2937; --muted: #6b7280; --dim: #9aa3b2;
+      --blue: #2563eb; --blue-bg: #eff4ff; --green: #059669;
+      --violet: #7c3aed; --amber: #d97706; --rose: #dc2626;
+      --orange: #ea580c; --cyan: #0891b2;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; }
+    code, pre, .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; }
+    .app { display: grid; grid-template-columns: 220px 1fr; min-height: 100vh; }
+    .side { border-right: 1px solid var(--line); padding: 1.25rem 1rem; background: #fff; }
+    .brand { display: flex; align-items: center; gap: .6rem; margin-bottom: 1.5rem; }
+    .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--blue); }
+    .brand h1 { font-size: 1rem; }
+    .brand small { display: block; color: var(--dim); font-size: .7rem; font-weight: 400; }
+    .nav button { width: 100%; text-align: left; background: transparent; border: 1px solid transparent; color: var(--muted); padding: .55rem .7rem; border-radius: 8px; font: inherit; font-size: .85rem; cursor: pointer; margin-bottom: .3rem; }
+    .nav button:hover { color: var(--text); background: #f3f4f8; }
+    .nav button.on { color: var(--blue); border-color: #bfdbfe; background: var(--blue-bg); }
+    .main { padding: 1.25rem 1.5rem 2rem; }
+    .top { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.1rem; gap: 1rem; }
+    .top h2 { font-size: 1.15rem; }
+    .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: .75rem; margin-bottom: 1.1rem; }
+    .card { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: .9rem 1rem; box-shadow: 0 1px 2px rgba(15,23,42,.04); }
+    .card .k { color: var(--dim); font-size: .72rem; }
+    .card .v { font-size: 1.3rem; font-weight: 650; margin-top: .2rem; }
+    .filters { display: flex; flex-wrap: wrap; gap: .5rem; margin-bottom: .85rem; }
+    input, select, textarea, button.btn { font: inherit; font-size: .82rem; color: var(--text); background: #fff; border: 1px solid #d1d5db; border-radius: 8px; padding: .45rem .65rem; }
+    textarea { width: 100%; min-height: 180px; font-family: ui-monospace, Menlo, monospace; font-size: .75rem; }
+    button.btn { cursor: pointer; background: #fff; }
+    button.btn:hover { border-color: #94a3b8; }
+    button.primary { border-color: #93c5fd; color: #1d4ed8; background: var(--blue-bg); }
+    button.danger { border-color: #fecaca; color: var(--rose); background: #fef2f2; }
+    table { width: 100%; border-collapse: collapse; font-size: .8rem; }
+    th, td { padding: .5rem .55rem; border-bottom: 1px solid var(--line); text-align: left; }
+    th { color: var(--dim); font-weight: 500; }
+    tbody tr { cursor: pointer; }
+    tbody tr:hover { background: #f8fafc; }
+    tbody tr.sel { background: var(--blue-bg); }
+    .pill { display: inline-block; padding: .12rem .45rem; border-radius: 999px; font-size: .7rem; border: 1px solid; background: #fff; }
+    .layout { display: grid; grid-template-columns: 1fr 360px; gap: 1rem; }
+    .split { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
+    .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; overflow: hidden; box-shadow: 0 1px 2px rgba(15,23,42,.04); }
+    .panel h3 { font-size: .85rem; padding: .75rem 1rem; border-bottom: 1px solid var(--line); background: #fafbff; }
+    .detail { padding: 1rem; font-size: .8rem; color: var(--muted); }
+    .detail dt { color: var(--dim); margin-top: .45rem; }
+    .detail dd { color: var(--text); word-break: break-all; }
+    .actions { display: flex; flex-wrap: wrap; gap: .4rem; margin-top: .9rem; }
+    .login { max-width: 380px; margin: 16vh auto; background: #fff; border: 1px solid var(--line); border-radius: 14px; padding: 1.6rem; box-shadow: 0 10px 30px rgba(15,23,42,.06); }
+    .login h2 { margin-bottom: .4rem; }
+    .login p { color: var(--muted); font-size: .85rem; margin-bottom: 1rem; }
+    .login input { width: 100%; margin-bottom: .7rem; }
+    .err { color: var(--rose); font-size: .8rem; margin-top: .5rem; }
+    .ok { color: var(--green); font-size: .8rem; margin-top: .5rem; }
+    .empty { color: var(--dim); padding: 1.5rem; text-align: center; }
+    .lines { width: 100%; margin-top: .4rem; }
+    .pager { padding: .6rem 1rem; }
+    .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: .6rem; padding: 1rem; }
+    .form-grid label, .stack label { display: block; font-size: .75rem; color: var(--muted); margin-bottom: .2rem; }
+    .span2 { grid-column: span 2; }
+    .stack { display: flex; flex-direction: column; gap: .55rem; padding: 1rem; }
+    pre.out { background: #0f172a; color: #e2e8f0; padding: 1rem; font-size: .72rem; overflow: auto; max-height: 420px; white-space: pre-wrap; }
+    .api-list { max-height: 70vh; overflow: auto; }
+    .api-list button { width: 100%; text-align: left; border: 0; border-bottom: 1px solid var(--line); background: #fff; padding: .65rem .8rem; cursor: pointer; font: inherit; }
+    .api-list button:hover, .api-list button.on { background: var(--blue-bg); }
+    .m { font-size: .68rem; font-weight: 700; margin-right: .35rem; }
+    .m-GET { color: var(--green); } .m-POST { color: var(--blue); }
+    @media (max-width: 960px) {
+      .app { grid-template-columns: 1fr; } .side { display: none; }
+      .layout, .split, .form-grid { grid-template-columns: 1fr; }
+      .span2 { grid-column: span 1; }
+    }
+  </style>
+</head>
+<body>
+<div id="login" class="login">
+  <h2>Order Hub 运营后台</h2>
+  <p>使用 <code>ADMIN_TOKEN</code>（默认 <code>dev-admin</code>）登录。</p>
+  <input id="token" type="password" placeholder="Admin token" value="dev-admin"/>
+  <button class="btn primary" style="width:100%" onclick="login()">进入</button>
+  <div id="login-err" class="err"></div>
+</div>
+<div id="app" class="app" style="display:none">
+  <aside class="side">
+    <div class="brand">
+      <div class="dot"></div>
+      <div><h1>Order Hub</h1><small>运营控制台</small></div>
+    </div>
+    <nav class="nav">
+      <button class="on" data-tab="overview" onclick="tab('overview')">概览</button>
+      <button data-tab="orders" onclick="tab('orders')">订单单据</button>
+      <button data-tab="checkout" onclick="tab('checkout')">测试下单</button>
+      <button data-tab="demo" onclick="tab('demo')">API Demo</button>
+      <button data-tab="tickets" onclick="tab('tickets')">补偿工单</button>
+    </nav>
+  </aside>
+  <main class="main">
+    <div class="top">
+      <h2 id="title">概览</h2>
+      <div>
+        <button class="btn" onclick="refresh()">刷新</button>
+        <button class="btn" onclick="logout()">退出</button>
+      </div>
+    </div>
+    <section id="view-overview">
+      <div class="filters">
+        <button class="btn primary" onclick="seedData()">生成演示数据</button>
+        <span id="seed-msg" class="ok"></span>
+      </div>
+      <div class="cards" id="cards"></div>
+    </section>
+    <section id="view-orders" style="display:none">
+      <div class="filters">
+        <input id="f-q" placeholder="order_id / client_order_id / user_id"/>
+        <select id="f-status">
+          <option value="">全部状态</option>
+          <option>PENDING_PAY</option><option>PAID</option><option>FULFILLING</option>
+          <option>COMPLETED</option><option>CANCELLED</option><option>COMPENSATING</option>
+          <option>REFUNDING</option><option>REFUNDED</option><option>PARTIAL_REFUNDED</option>
+        </select>
+        <select id="f-scene">
+          <option value="">全部 scene</option>
+          <option>mall_checkout</option><option>point_mall</option>
+          <option>membership</option><option>course</option><option>saas_subscription</option>
+        </select>
+        <input id="f-tenant" placeholder="tenant_id（可空）"/>
+        <button class="btn primary" onclick="loadOrders()">查询</button>
+      </div>
+      <div class="layout">
+        <div class="panel">
+          <h3>订单列表</h3>
+          <div style="overflow:auto;max-height:70vh">
+            <table>
+              <thead><tr><th>单号</th><th>场景</th><th>状态</th><th>应付</th><th>买家</th></tr></thead>
+              <tbody id="order-rows"></tbody>
+            </table>
+            <div id="order-empty" class="empty" style="display:none">没有单据</div>
+            <div class="pager"><button class="btn" id="more-btn" style="display:none" onclick="loadOrders(true)">加载更多</button></div>
+          </div>
+        </div>
+        <div class="panel">
+          <h3>单据详情</h3>
+          <div id="order-detail" class="detail"><div class="empty">点选左侧一行</div></div>
+        </div>
+      </div>
+    </section>
+    <section id="view-checkout" style="display:none">
+      <div class="split">
+        <div class="panel">
+          <h3>测试下单</h3>
+          <div class="form-grid">
+            <div class="span2">
+              <label>场景模板</label>
+              <select id="c-preset" onchange="applyPreset()">
+                <option value="mall_checkout">商城下单（券 + 渠道支付）</option>
+                <option value="mall_mix">商城混合支付</option>
+                <option value="point_mall">积分商城</option>
+                <option value="membership">会员开通</option>
+                <option value="course">课程购买</option>
+                <option value="saas_subscription">SaaS 订阅</option>
+              </select>
+            </div>
+            <div><label>买家 Token</label><input id="c-token" value="mock.u_123.tenant_001"/></div>
+            <div><label>渠道</label><input id="c-channel" value="app"/></div>
+            <div><label>client_order_id</label><input id="c-cli"/></div>
+            <div><label>优惠券</label><input id="c-coupon" value="coupon_001"/></div>
+            <div><label>支付方式</label>
+              <select id="c-pay"><option>channel</option><option>ledger</option><option>mix</option></select>
+            </div>
+            <div><label>账本金额（可空）</label><input id="c-ledger" placeholder="ledger_pay.amount"/></div>
+            <div class="span2"><label>行项目 JSON</label><textarea id="c-items" rows="8"></textarea></div>
+            <div class="span2 actions">
+              <button class="btn" onclick="doPreview()">试算 Preview</button>
+              <button class="btn primary" onclick="doCheckout()">提交下单</button>
+              <button class="btn" onclick="doMockPay()">模拟支付成功</button>
+              <button class="btn" onclick="doConfirmLedger()">账本确认</button>
+              <button class="btn" onclick="doUserAct('complete')">履约完成</button>
+              <button class="btn danger" onclick="doUserAct('cancel')">取消</button>
+            </div>
+          </div>
+        </div>
+        <div class="panel">
+          <h3>结果</h3>
+          <pre class="out" id="c-out">选择模板后可试算 / 下单。积分场景用「账本确认」，商城用「模拟支付成功」。</pre>
+        </div>
+      </div>
+    </section>
+    <section id="view-demo" style="display:none">
+      <div class="filters">
+        <input id="d-user" style="min-width:240px" value="mock.u_123.tenant_001" placeholder="用户 Bearer token"/>
+        <input id="d-oid" placeholder="order_id（替换路径占位符）" style="min-width:260px"/>
+      </div>
+      <div class="layout">
+        <div class="panel">
+          <h3>接口目录</h3>
+          <div class="api-list" id="api-list"></div>
+        </div>
+        <div class="panel">
+          <h3 id="d-title">选择左侧接口</h3>
+          <div class="stack">
+            <div><label>Method / Path</label><input id="d-path" class="mono"/></div>
+            <div><label>Request body</label><textarea id="d-body"></textarea></div>
+            <button class="btn primary" onclick="runDemo()">发送请求</button>
+            <div id="d-err" class="err"></div>
+            <pre class="out" id="d-out">从左侧选一个接口。</pre>
+          </div>
+        </div>
+      </div>
+    </section>
+    <section id="view-tickets" style="display:none">
+      <div class="filters">
+        <select id="t-status">
+          <option value="">全部</option>
+          <option>pending</option><option>running</option><option>done</option><option>failed</option>
+        </select>
+        <button class="btn primary" onclick="loadTickets()">查询</button>
+      </div>
+      <div class="panel">
+        <h3>补偿工单</h3>
+        <table>
+          <thead><tr><th>ID</th><th>kind</th><th>ref</th><th>status</th><th>attempts</th><th>error</th><th></th></tr></thead>
+          <tbody id="ticket-rows"></tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+</div>
+<script>
+const TOKEN_KEY = 'oh_admin_token';
+let current = null, nextCursor = '', orderItems = [], lastOrder = null, demoCur = null;
+const pillColor = {
+  PENDING_PAY: '#d97706', PAID: '#059669', FULFILLING: '#0891b2', COMPLETED: '#7c3aed',
+  CANCELLED: '#6b7280', COMPENSATING: '#ea580c', REFUNDING: '#dc2626', REFUNDED: '#dc2626',
+  PARTIAL_REFUNDED: '#dc2626', pending: '#d97706', running: '#0891b2', done: '#059669', failed: '#dc2626'
+};
+const PRESETS = {
+  mall_checkout: {pay:'channel', coupon:'coupon_001', ledger:'', items:[
+    {line_id:'line_1', object_type:'sku', object_id:'sku_1001', quantity:2, unit_price:10000},
+    {line_id:'line_2', object_type:'service', object_id:'delivery', quantity:1, unit_price:6800}
+  ]},
+  mall_mix: {pay:'mix', coupon:'coupon_001', ledger:'8000', items:[
+    {line_id:'line_1', object_type:'sku', object_id:'sku_mix', quantity:1, unit_price:26800},
+    {line_id:'line_2', object_type:'service', object_id:'delivery', quantity:1, unit_price:6800}
+  ]},
+  point_mall: {pay:'ledger', coupon:'', ledger:'', items:[
+    {line_id:'l1', object_type:'sku_point', object_id:'point_sku_1', quantity:1, unit_price:500}
+  ]},
+  membership: {pay:'channel', coupon:'', ledger:'', items:[
+    {line_id:'l1', object_type:'membership', object_id:'mem_year', quantity:1, unit_price:19900}
+  ]},
+  course: {pay:'channel', coupon:'', ledger:'', items:[
+    {line_id:'l1', object_type:'course', object_id:'course_go', quantity:1, unit_price:9900}
+  ]},
+  saas_subscription: {pay:'channel', coupon:'', ledger:'', items:[
+    {line_id:'l1', object_type:'plan', object_id:'plan_pro', quantity:1, unit_price:29900}
+  ]}
+};
+const DEMOS = [
+  {g:'用户', m:'POST', p:'/api/v1/orders/preview', a:'user', b:{scene:'mall_checkout', channel:'app', coupon_ids:['coupon_001'], items:PRESETS.mall_checkout.items}},
+  {g:'用户', m:'POST', p:'/api/v1/orders', a:'user', k:true, b:{client_order_id:'cli_demo', scene:'mall_checkout', channel:'app', coupon_ids:['coupon_001'], items:PRESETS.mall_checkout.items}},
+  {g:'用户', m:'GET', p:'/api/v1/orders', a:'user'},
+  {g:'用户', m:'GET', p:'/api/v1/orders/{order_id}', a:'user'},
+  {g:'用户', m:'POST', p:'/api/v1/orders/{order_id}/cancel', a:'user'},
+  {g:'用户', m:'POST', p:'/api/v1/orders/{order_id}/pay-intent', a:'user'},
+  {g:'用户', m:'POST', p:'/api/v1/orders/{order_id}/confirm-ledger', a:'user'},
+  {g:'用户', m:'POST', p:'/api/v1/orders/{order_id}/complete', a:'user'},
+  {g:'用户', m:'POST', p:'/api/v1/orders/{order_id}/renew', a:'user'},
+  {g:'用户', m:'POST', p:'/api/v1/orders/{order_id}/refunds', a:'user', b:{reason:'demo refund'}},
+  {g:'内部', m:'POST', p:'/internal/v1/orders/callbacks/payment', a:'none', b:{order_id:'{order_id}', tenant_id:'tenant_001', success:true}},
+  {g:'内部', m:'GET', p:'/internal/v1/compensations', a:'none'},
+  {g:'运营', m:'GET', p:'/admin/v1/stats', a:'admin'},
+  {g:'运营', m:'GET', p:'/admin/v1/orders', a:'admin'},
+  {g:'运营', m:'GET', p:'/admin/v1/orders/{order_id}', a:'admin'},
+  {g:'运营', m:'POST', p:'/admin/v1/orders/{order_id}/cancel', a:'admin'},
+  {g:'运营', m:'POST', p:'/admin/v1/orders/{order_id}/complete', a:'admin'},
+  {g:'运营', m:'POST', p:'/admin/v1/orders/{order_id}/confirm-ledger', a:'admin'},
+  {g:'运营', m:'POST', p:'/admin/v1/orders/{order_id}/renew', a:'admin'},
+  {g:'运营', m:'POST', p:'/admin/v1/orders/{order_id}/retry-paid', a:'admin'},
+  {g:'运营', m:'POST', p:'/admin/v1/orders/{order_id}/refunds', a:'admin', b:{reason:'admin refund'}},
+  {g:'运营', m:'GET', p:'/admin/v1/compensations', a:'admin'},
+  {g:'运营', m:'POST', p:'/admin/v1/seed', a:'admin'}
+];
+function token(){ return localStorage.getItem(TOKEN_KEY) || ''; }
+function login(){ localStorage.setItem(TOKEN_KEY, document.getElementById('token').value.trim()); boot(); }
+function logout(){ localStorage.removeItem(TOKEN_KEY); location.reload(); }
+function pretty(x){ try { return JSON.stringify(x, null, 2); } catch(e){ return String(x); } }
+async function req(path, opt={}){
+  const headers = Object.assign({'Content-Type':'application/json'}, opt.headers||{});
+  const auth = opt.auth || 'admin';
+  if (auth === 'admin') headers['X-Admin-Token'] = token();
+  if (auth === 'user') headers['Authorization'] = 'Bearer ' + (opt.user || document.getElementById('c-token')?.value || document.getElementById('d-user')?.value || 'mock.u_123.tenant_001');
+  const init = {method: opt.method || 'GET', headers};
+  if (opt.body !== undefined && opt.method && opt.method !== 'GET') init.body = typeof opt.body === 'string' ? opt.body : JSON.stringify(opt.body);
+  const res = await fetch(path, init);
+  const text = await res.text();
+  let body = {};
+  try { body = text ? JSON.parse(text) : {}; } catch(e){ body = {raw: text}; }
+  if (!res.ok || (body.code && body.code !== 0)) throw new Error(body.message || ('HTTP '+res.status+' '+text));
+  return body.data !== undefined ? body.data : body;
+}
+function fmtAmt(o){
+  if (!o) return '-';
+  const n = o.payable_amount || 0;
+  if (o.currency === 'POINT') return n + ' POINT';
+  return (n/100).toFixed(2) + ' ' + (o.currency||'');
+}
+function pill(st){
+  const c = pillColor[st] || '#6b7280';
+  return `<span class="pill" style="color:${c};border-color:${c}55">${st||'-'}</span>`;
+}
+const TITLES = {overview:'概览', orders:'订单单据', checkout:'测试下单', demo:'API Demo', tickets:'补偿工单'};
+function tab(name){
+  document.querySelectorAll('.nav button').forEach(b=>b.classList.toggle('on', b.dataset.tab===name));
+  ['overview','orders','checkout','demo','tickets'].forEach(id=>{
+    document.getElementById('view-'+id).style.display = id===name ? '' : 'none';
+  });
+  document.getElementById('title').textContent = TITLES[name];
+  if (name==='overview') loadStats();
+  if (name==='orders') loadOrders();
+  if (name==='checkout') { if (!document.getElementById('c-items').value) applyPreset(); if (!document.getElementById('c-cli').value) document.getElementById('c-cli').value = 'cli_'+Date.now(); }
+  if (name==='demo') renderDemos();
+  if (name==='tickets') loadTickets();
+}
+async function loadStats(){
+  const s = await req('/admin/v1/stats');
+  const orders = s.orders || {}, comps = s.compensations || {};
+  const items = [
+    ['待支付', orders.PENDING_PAY||0], ['已支付', orders.PAID||0],
+    ['履约中', orders.FULFILLING||0], ['已完成', orders.COMPLETED||0],
+    ['补偿中', orders.COMPENSATING||0], ['已取消', orders.CANCELLED||0],
+    ['已退 / 部分退', (orders.REFUNDED||0)+' / '+(orders.PARTIAL_REFUNDED||0)],
+    ['工单 pending', comps.pending||0], ['未投递事件', s.unpublished_events||0]
+  ];
+  document.getElementById('cards').innerHTML = items.map(([k,v])=>`<div class="card"><div class="k">${k}</div><div class="v">${v}</div></div>`).join('');
+}
+async function seedData(){
+  const el = document.getElementById('seed-msg');
+  el.textContent = '生成中…';
+  try {
+    const r = await req('/admin/v1/seed', {method:'POST', body:{}});
+    el.textContent = '已写入 '+r.created+' 笔' + (r.failed ? '，失败 '+r.failed : '');
+    await loadStats();
+  } catch (e) { el.textContent = ''; alert(e.message); }
+}
+async function loadOrders(more){
+  const q = new URLSearchParams();
+  const query = document.getElementById('f-q').value.trim();
+  const st = document.getElementById('f-status').value;
+  const sc = document.getElementById('f-scene').value;
+  const tn = document.getElementById('f-tenant').value.trim();
+  if (query) q.set('q', query);
+  if (st) q.set('status', st);
+  if (sc) q.set('scene', sc);
+  if (tn) q.set('tenant_id', tn);
+  q.set('limit', '20');
+  if (more && nextCursor) q.set('cursor', nextCursor);
+  try {
+    const data = await req('/admin/v1/orders?'+q.toString());
+    const items = data.items || [];
+    orderItems = more ? orderItems.concat(items) : items;
+    nextCursor = data.next_cursor || '';
+    document.getElementById('order-empty').textContent = '没有单据';
+    document.getElementById('order-empty').style.display = orderItems.length ? 'none' : '';
+    document.getElementById('more-btn').style.display = nextCursor ? '' : 'none';
+    document.getElementById('order-rows').innerHTML = orderItems.map(o=>`<tr data-id="${o.order_id}" onclick="openOrder('${o.order_id}')">
+      <td>${o.order_id}</td><td>${o.scene}</td><td>${pill(o.status)}</td>
+      <td>${fmtAmt(o)}</td><td>${o.buyer_user_id||''}</td></tr>`).join('');
+  } catch (e) {
+    document.getElementById('order-empty').style.display = '';
+    document.getElementById('order-empty').textContent = e.message;
+  }
+}
+async function openOrder(id){
+  document.querySelectorAll('#order-rows tr').forEach(tr=>tr.classList.toggle('sel', tr.dataset.id===id));
+  const o = await req('/admin/v1/orders/'+encodeURIComponent(id));
+  current = o;
+  document.getElementById('order-detail').innerHTML = `<dl>
+    <dt>order_id</dt><dd>${o.order_id}</dd>
+    <dt>client_order_id</dt><dd>${o.client_order_id||'-'}</dd>
+    <dt>status</dt><dd>${pill(o.status)} v${o.version}</dd>
+    <dt>tenant / buyer</dt><dd>${o.tenant_id || ''} / ${o.buyer_user_id||''}</dd>
+    <dt>scene / pay</dt><dd>${o.scene} · ${o.pay_method||''}</dd>
+    <dt>金额</dt><dd>原 ${o.original_amount} 优惠 ${o.discount_amount} 应付 ${o.payable_amount}<br/>账本 ${o.ledger_pay_amount} 渠道 ${o.channel_pay_amount}<br/>已付 ${o.paid_amount} 已退 ${o.refunded_amount} ${o.currency}</dd>
+    <dt>引用</dt><dd>rsv ${o.reservation_id||'-'} · freeze ${o.freeze_id||'-'} · intent ${o.payment_intent_id||'-'}</dd>
+    <dt>expire / renew</dt><dd>${o.expire_at||'-'} · renew ${o.renew_count||0}</dd>
+    <dt>created_at</dt><dd>${o.created_at||'-'}</dd>
+    <dt>行项目</dt><dd>${(o.lines||[]).length ? `<table class="lines"><thead><tr><th>line</th><th>sku</th><th>qty</th><th>unit</th></tr></thead><tbody>${
+      o.lines.map(l=>`<tr><td>${l.line_id}</td><td>${l.object_id}</td><td>${l.quantity}</td><td>${l.unit_price}</td></tr>`).join('')
+    }</tbody></table>` : '-'}</dd>
+  </dl>
+  <div class="actions">
+    <button class="btn" onclick="act('renew')">续期券锁</button>
+    <button class="btn" onclick="act('complete')">履约完成</button>
+    <button class="btn" onclick="act('confirm-ledger')">账本确认</button>
+    <button class="btn" onclick="act('retry-paid')">重试支付后编排</button>
+    <button class="btn" onclick="refund()">退款</button>
+    <button class="btn danger" onclick="act('cancel')">取消关单</button>
+  </div>
+  <div id="act-err" class="err"></div>`;
+}
+async function act(name){
+  if (!current) return;
+  const el = document.getElementById('act-err'); el.textContent = '';
+  try {
+    await req('/admin/v1/orders/'+encodeURIComponent(current.order_id)+'/'+name, {method:'POST', body:{}});
+    await openOrder(current.order_id); await loadOrders();
+  } catch (e) { el.textContent = e.message; }
+}
+async function refund(){
+  if (!current) return;
+  const amt = prompt('退款金额（最小货币单位，空=全额可退）', '');
+  if (amt === null) return;
+  const el = document.getElementById('act-err');
+  try {
+    const body = {};
+    if (amt !== '') body.amount = Number(amt);
+    await req('/admin/v1/orders/'+encodeURIComponent(current.order_id)+'/refunds', {method:'POST', body});
+    await openOrder(current.order_id); await loadOrders();
+  } catch (e) { el.textContent = e.message; }
+}
+function applyPreset(){
+  const name = document.getElementById('c-preset').value;
+  const p = PRESETS[name] || PRESETS.mall_checkout;
+  document.getElementById('c-pay').value = p.pay;
+  document.getElementById('c-coupon').value = p.coupon;
+  document.getElementById('c-ledger').value = p.ledger;
+  document.getElementById('c-items').value = pretty(p.items);
+  document.getElementById('c-cli').value = 'cli_'+Date.now();
+}
+function checkoutBody(){
+  const scene = document.getElementById('c-preset').value === 'mall_mix' ? 'mall_checkout' : document.getElementById('c-preset').value;
+  const body = {
+    client_order_id: document.getElementById('c-cli').value.trim(),
+    scene, channel: document.getElementById('c-channel').value.trim() || 'app',
+    pay_method: document.getElementById('c-pay').value,
+    items: JSON.parse(document.getElementById('c-items').value)
+  };
+  const coupon = document.getElementById('c-coupon').value.trim();
+  if (coupon) body.coupon_ids = coupon.split(',').map(s=>s.trim()).filter(Boolean);
+  const led = document.getElementById('c-ledger').value.trim();
+  if (led) body.ledger_pay = {asset_code: scene==='point_mall' ? 'POINT' : 'CNY', amount: Number(led)};
+  return body;
+}
+async function doPreview(){
+  try {
+    const b = checkoutBody();
+    delete b.client_order_id; delete b.pay_method;
+    const data = await req('/api/v1/orders/preview', {method:'POST', auth:'user', user:document.getElementById('c-token').value.trim(), body:b});
+    document.getElementById('c-out').textContent = pretty(data);
+  } catch (e) { document.getElementById('c-out').textContent = e.message; }
+}
+async function doCheckout(){
+  try {
+    const b = checkoutBody();
+    const data = await req('/api/v1/orders', {method:'POST', auth:'user', user:document.getElementById('c-token').value.trim(), headers:{'Idempotency-Key': b.client_order_id}, body:b});
+    lastOrder = data;
+    document.getElementById('d-oid').value = data.order_id || '';
+    document.getElementById('c-out').textContent = pretty(data);
+  } catch (e) { document.getElementById('c-out').textContent = e.message; }
+}
+function tenantFromToken(){
+  const t = document.getElementById('c-token').value.trim();
+  const p = t.split('.');
+  return p.length >= 3 ? p[2] : 'tenant_001';
+}
+async function doMockPay(){
+  if (!lastOrder || !lastOrder.order_id) { document.getElementById('c-out').textContent = '请先下单'; return; }
+  try {
+    const data = await req('/internal/v1/orders/callbacks/payment', {method:'POST', auth:'none', body:{
+      order_id: lastOrder.order_id, tenant_id: tenantFromToken(), success: true
+    }});
+    document.getElementById('c-out').textContent = pretty(data);
+  } catch (e) { document.getElementById('c-out').textContent = e.message; }
+}
+async function doConfirmLedger(){
+  if (!lastOrder || !lastOrder.order_id) { document.getElementById('c-out').textContent = '请先下单'; return; }
+  try {
+    const data = await req('/api/v1/orders/'+lastOrder.order_id+'/confirm-ledger', {method:'POST', auth:'user', user:document.getElementById('c-token').value.trim(), body:{}});
+    document.getElementById('c-out').textContent = pretty(data);
+  } catch (e) { document.getElementById('c-out').textContent = e.message; }
+}
+async function doUserAct(name){
+  if (!lastOrder || !lastOrder.order_id) { document.getElementById('c-out').textContent = '请先下单'; return; }
+  try {
+    const data = await req('/api/v1/orders/'+lastOrder.order_id+'/'+name, {method:'POST', auth:'user', user:document.getElementById('c-token').value.trim(), body:{}});
+    document.getElementById('c-out').textContent = pretty(data);
+  } catch (e) { document.getElementById('c-out').textContent = e.message; }
+}
+function renderDemos(){
+  const box = document.getElementById('api-list');
+  box.innerHTML = DEMOS.map((d,i)=>`<button data-i="${i}" onclick="pickDemo(${i})"><span class="m m-${d.m}">${d.m}</span>${d.p}<div style="color:#9aa3b2;font-size:.7rem">${d.g} · ${d.a}</div></button>`).join('');
+}
+function pickDemo(i){
+  demoCur = DEMOS[i];
+  document.querySelectorAll('#api-list button').forEach((b,idx)=>b.classList.toggle('on', idx===i));
+  document.getElementById('d-title').textContent = demoCur.m + ' ' + demoCur.p;
+  document.getElementById('d-path').value = demoCur.m + ' ' + demoCur.p;
+  document.getElementById('d-body').value = demoCur.b ? pretty(demoCur.b) : '';
+  document.getElementById('d-err').textContent = '';
+}
+async function runDemo(){
+  if (!demoCur) return;
+  const oid = document.getElementById('d-oid').value.trim() || (lastOrder && lastOrder.order_id) || '{order_id}';
+  let path = demoCur.p.replaceAll('{order_id}', oid);
+  const method = demoCur.m;
+  let body;
+  const raw = document.getElementById('d-body').value.trim();
+  if (raw) {
+    try { body = JSON.parse(raw.replaceAll('{order_id}', oid)); }
+    catch (e) { document.getElementById('d-err').textContent = 'JSON 无法解析'; return; }
+  }
+  const headers = {};
+  if (demoCur.k && body && body.client_order_id) headers['Idempotency-Key'] = body.client_order_id;
+  document.getElementById('d-err').textContent = '';
+  try {
+    const data = await req(path, {method, auth: demoCur.a, user: document.getElementById('d-user').value.trim(), headers, body});
+    document.getElementById('d-out').textContent = pretty(data);
+    if (data && data.order_id) document.getElementById('d-oid').value = data.order_id;
+  } catch (e) {
+    document.getElementById('d-err').textContent = e.message;
+    document.getElementById('d-out').textContent = e.message;
+  }
+}
+async function loadTickets(){
+  const st = document.getElementById('t-status').value;
+  const q = st ? ('?status='+encodeURIComponent(st)+'&limit=50') : '?limit=50';
+  try {
+    const data = await req('/admin/v1/compensations'+q);
+    const items = data.items || [];
+    document.getElementById('ticket-rows').innerHTML = items.map(t=>`<tr>
+      <td>${t.id}</td><td>${t.kind}</td><td>${t.ref||''}</td>
+      <td>${pill(t.status)}</td><td>${t.attempts||0}</td>
+      <td>${(t.last_error||'').slice(0,80)}</td>
+      <td><button class="btn" onclick="retryTicket(${t.id})">重试</button></td>
+    </tr>`).join('') || '<tr><td colspan="7" class="empty">没有工单</td></tr>';
+  } catch (e) {
+    document.getElementById('ticket-rows').innerHTML = '<tr><td colspan="7" class="err">'+e.message+'</td></tr>';
+  }
+}
+async function retryTicket(id){
+  await req('/admin/v1/compensations/'+id+'/retry', {method:'POST', body:{}});
+  await loadTickets();
+}
+async function boot(){
+  try {
+    await loadStats();
+    document.getElementById('login').style.display = 'none';
+    document.getElementById('app').style.display = 'grid';
+    applyPreset();
+  } catch (e) {
+    document.getElementById('login-err').textContent = e.message;
+  }
+}
+function refresh(){
+  const on = document.querySelector('.nav button.on');
+  if (on) tab(on.dataset.tab);
+}
+if (token()) boot();
+</script>
+</body>
+</html>

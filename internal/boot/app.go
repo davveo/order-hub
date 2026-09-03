@@ -111,6 +111,7 @@ func Build(cfg conf.Config) (*Runtime, error) {
 	refundSvc := application.NewRefundService(repo, offer, ledger, pay, ids, clk)
 	renewSvc := application.NewRenewService(repo, offer, clk)
 	compensate := application.NewCompensateWorker(repo, paySvc, offer, ledger, fulfill, clk)
+	seedSvc := application.NewSeedService(checkoutSvc, paySvc, cancelSvc, refundSvc)
 
 	readyFn := func(ctx context.Context) error {
 		if db != nil {
@@ -132,8 +133,10 @@ func Build(cfg conf.Config) (*Runtime, error) {
 		RefundSvc:   refundSvc,
 		RenewSvc:    renewSvc,
 		Compensate:  compensate,
+		SeedSvc:     seedSvc,
 		PaySecret:   cfg.PaymentCallbackSK,
 		ReadyFn:     readyFn,
+		AdminToken:  cfg.AdminToken,
 	}
 
 	return &Runtime{

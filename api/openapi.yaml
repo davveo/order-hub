@@ -81,11 +81,57 @@ paths:
       responses:
         '200':
           description: ok
+  /admin:
+    get:
+      summary: Ops console HTML
+      responses:
+        '200':
+          description: html
+  /admin/v1/stats:
+    get:
+      summary: Order and compensation counts
+      security: [{adminToken: []}]
+      responses:
+        '200':
+          description: ok
+  /admin/v1/orders:
+    get:
+      summary: Admin list orders
+      security: [{adminToken: []}]
+      parameters:
+        - {in: query, name: tenant_id, schema: {type: string}}
+        - {in: query, name: status, schema: {type: string}}
+        - {in: query, name: scene, schema: {type: string}}
+        - {in: query, name: q, schema: {type: string}}
+        - {in: query, name: cursor, schema: {type: string}}
+      responses:
+        '200':
+          description: ok
+  /admin/v1/orders/{order_id}:
+    get:
+      summary: Admin get order
+      security: [{adminToken: []}]
+      parameters:
+        - {in: path, name: order_id, required: true, schema: {type: string}}
+      responses:
+        '200':
+          description: ok
+  /admin/v1/compensations:
+    get:
+      summary: List compensation tickets
+      security: [{adminToken: []}]
+      responses:
+        '200':
+          description: ok
 components:
   securitySchemes:
     bearerAuth:
       type: http
       scheme: bearer
+    adminToken:
+      type: apiKey
+      in: header
+      name: X-Admin-Token
   schemas:
     PreviewRequest:
       type: object

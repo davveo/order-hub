@@ -19,17 +19,17 @@ type AuthClient interface {
 }
 
 type QuoteRequest struct {
-	TenantID     string
-	UserID       string
-	OrderID      string
-	Scene        string
-	Channel      string
-	Currency     string
-	CouponIDs    []string
-	AutoBest     bool
-	Items        []domain.OrderLine
-	Attributes   map[string]any
-	Context      map[string]any
+	TenantID   string
+	UserID     string
+	OrderID    string
+	Scene      string
+	Channel    string
+	Currency   string
+	CouponIDs  []string
+	AutoBest   bool
+	Items      []domain.OrderLine
+	Attributes map[string]any
+	Context    map[string]any
 }
 
 type QuoteResult struct {
@@ -127,13 +127,13 @@ type PreviewCache interface {
 }
 
 type IdempotencyRecord struct {
-	TenantID   string
-	Actor      string
-	Key        string
+	TenantID    string
+	Actor       string
+	Key         string
 	RequestHash string
-	Response   []byte
-	OrderID    string
-	CreatedAt  time.Time
+	Response    []byte
+	OrderID     string
+	CreatedAt   time.Time
 }
 
 type CheckoutPersist struct {
@@ -143,19 +143,19 @@ type CheckoutPersist struct {
 }
 
 type TransitionCmd struct {
-	TenantID    string
-	OrderID     string
-	From        []domain.Status
-	To          domain.Status
-	Version     int64
-	PaidAmount  *int64
-	RefundedAdd int64
-	RedemptionID string
+	TenantID        string
+	OrderID         string
+	From            []domain.Status
+	To              domain.Status
+	Version         int64
+	PaidAmount      *int64
+	RefundedAdd     int64
+	RedemptionID    string
 	PaymentIntentID string
-	Event       *domain.Event
-	PaidAt      *time.Time
-	CancelledAt *time.Time
-	CompletedAt *time.Time
+	Event           *domain.Event
+	PaidAt          *time.Time
+	CancelledAt     *time.Time
+	CompletedAt     *time.Time
 }
 
 type OrderRepository interface {
@@ -177,21 +177,34 @@ type OrderRepository interface {
 	UpdateCompensation(ctx context.Context, id int64, status, lastErr string, nextRetry *time.Time) error
 	ListCompensations(ctx context.Context, status string, limit int) ([]CompensationTicket, error)
 	FindCompensation(ctx context.Context, id int64) (*CompensationTicket, error)
+	AdminList(ctx context.Context, f AdminListFilter) ([]domain.Order, string, error)
+	CountOrdersByStatus(ctx context.Context, tenantID string) (map[string]int64, error)
+	CountCompensationsByStatus(ctx context.Context) (map[string]int64, error)
+	CountUnpublishedEvents(ctx context.Context) (int64, error)
 	ListUnpublishedEvents(ctx context.Context, limit int) ([]OutboxRow, error)
 	MarkEventPublished(ctx context.Context, eventID string) error
 }
 
+type AdminListFilter struct {
+	TenantID string
+	Status   domain.Status
+	Scene    string
+	Query    string
+	Cursor   string
+	Limit    int
+}
+
 type CompensationTicket struct {
-	ID         int64
-	Kind       string
-	TenantID   string
-	Ref        string
-	Payload    string
-	Status     string
-	Attempts   int
-	LastError  string
-	NextRetry  *time.Time
-	CreatedAt  time.Time
+	ID        int64      `json:"id"`
+	Kind      string     `json:"kind"`
+	TenantID  string     `json:"tenant_id"`
+	Ref       string     `json:"ref"`
+	Payload   string     `json:"payload"`
+	Status    string     `json:"status"`
+	Attempts  int        `json:"attempts"`
+	LastError string     `json:"last_error"`
+	NextRetry *time.Time `json:"next_retry,omitempty"`
+	CreatedAt time.Time  `json:"created_at"`
 }
 
 type OutboxRow struct {
