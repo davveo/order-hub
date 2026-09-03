@@ -1,0 +1,619 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Order Hub Architecture Diagram</title>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js" integrity="sha384-ZZ1pncU3bQe8y31yfZdMFdSpttDoPmOZg2wguVK9almUodir1PghgT0eY7Mrty8H" crossorigin="anonymous"></script>
+  <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.2/dist/jspdf.umd.min.js" integrity="sha384-en/ztfPSRkGfME4KIm05joYXynqzUgbsG5nMrj/xEFAHXkeZfO3yMK8QQ+mP7p1/" crossorigin="anonymous"></script>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: 'JetBrains Mono', monospace;
+      background: #020617;
+      min-height: 100vh;
+      padding: 2rem;
+      color: white;
+    }
+    .container { max-width: 1200px; margin: 0 auto; }
+    .header { margin-bottom: 2rem; }
+    .header-row { display: flex; align-items: center; gap: 1rem; margin-bottom: 0.5rem; }
+    .pulse-dot {
+      width: 12px; height: 12px; background: #22d3ee; border-radius: 50%;
+      animation: pulse 2s infinite;
+    }
+    @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
+    h1 { font-size: 1.5rem; font-weight: 700; letter-spacing: -0.025em; }
+    .subtitle { color: #94a3b8; font-size: 0.875rem; margin-left: 1.75rem; }
+    .diagram-container {
+      background: rgba(15, 23, 42, 0.5);
+      border-radius: 1rem;
+      border: 1px solid #1e293b;
+      padding: 1.5rem;
+      overflow-x: auto;
+      margin-bottom: 1.5rem;
+    }
+    .diagram-label {
+      color: #64748b;
+      font-size: 0.75rem;
+      font-weight: 600;
+      letter-spacing: 0.04em;
+      margin-bottom: 0.75rem;
+      text-transform: uppercase;
+    }
+    svg { width: 100%; min-width: 900px; display: block; }
+    .cards {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 1rem;
+      margin-top: 0.5rem;
+    }
+    .card {
+      background: rgba(15, 23, 42, 0.5);
+      border-radius: 0.75rem;
+      border: 1px solid #1e293b;
+      padding: 1.25rem;
+    }
+    .card-header { display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.75rem; }
+    .card-dot { width: 8px; height: 8px; border-radius: 50%; }
+    .card-dot.cyan { background: #22d3ee; }
+    .card-dot.emerald { background: #34d399; }
+    .card-dot.violet { background: #a78bfa; }
+    .card-dot.amber { background: #fbbf24; }
+    .card-dot.rose { background: #fb7185; }
+    .card h3 { font-size: 0.875rem; font-weight: 600; }
+    .card ul { list-style: none; color: #94a3b8; font-size: 0.75rem; }
+    .card li { margin-bottom: 0.375rem; }
+    .footer { text-align: center; margin-top: 1.5rem; color: #475569; font-size: 0.75rem; }
+    .toolbar { display: flex; gap: 0.5rem; margin-left: auto; flex-shrink: 0; align-items: center; }
+    .toolbar-toggle {
+      background: transparent; border: none; color: #475569; cursor: pointer;
+      font-size: 1.25rem; line-height: 1; padding: 0.25rem 0.5rem; border-radius: 0.375rem;
+      transition: color 0.2s, background 0.2s;
+    }
+    .toolbar-toggle:hover { color: #94a3b8; background: rgba(30, 41, 59, 0.5); }
+    .toolbar-actions { display: none; gap: 0.5rem; }
+    .toolbar.expanded .toolbar-actions { display: flex; }
+    .toolbar-actions button {
+      background: rgba(30, 41, 59, 0.8); border: 1px solid #334155; color: #94a3b8;
+      padding: 0.375rem 0.75rem; border-radius: 0.375rem; font-family: inherit;
+      font-size: 0.75rem; cursor: pointer; transition: all 0.2s; white-space: nowrap;
+    }
+    .toolbar-actions button:hover { background: rgba(51, 65, 85, 0.8); color: white; border-color: #475569; }
+    @media print { body { background: #020617; padding: 1rem; } .toolbar { display: none !important; } }
+  </style>
+</head>
+<body>
+  <div class="container" id="report-container">
+    <div class="header">
+      <div class="header-row">
+        <div class="pulse-dot"></div>
+        <h1>Order Hub Architecture</h1>
+        <div class="toolbar">
+          <div class="toolbar-actions">
+            <button onclick="copyAsImage(this)">📋 Copy</button>
+            <button onclick="downloadPNG(this)">🖼️ PNG</button>
+            <button onclick="downloadPDF(this)">📄 PDF</button>
+          </div>
+          <button class="toolbar-toggle" onclick="this.parentElement.classList.toggle('expanded')" title="Export options" aria-label="Export options">⋯</button>
+        </div>
+      </div>
+      <p class="subtitle">通用订单中台 · 编排 Auth Hub / OfferHub / Ledger Hub · 草案 v0.1</p>
+    </div>
+
+    <div class="diagram-container">
+      <div class="diagram-label">01 · 中台平面与邻居系统</div>
+      <svg viewBox="0 0 1200 900">
+        <defs>
+          <marker id="arrowhead" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+            <polygon points="0 0, 10 3.5, 0 7" fill="#64748b" />
+          </marker>
+          <marker id="arrow-cyan" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+            <polygon points="0 0, 10 3.5, 0 7" fill="#22d3ee" />
+          </marker>
+          <marker id="arrow-rose" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+            <polygon points="0 0, 10 3.5, 0 7" fill="#fb7185" />
+          </marker>
+          <marker id="arrow-emerald" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+            <polygon points="0 0, 10 3.5, 0 7" fill="#34d399" />
+          </marker>
+          <marker id="arrow-violet" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+            <polygon points="0 0, 10 3.5, 0 7" fill="#a78bfa" />
+          </marker>
+          <marker id="arrow-amber" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+            <polygon points="0 0, 10 3.5, 0 7" fill="#fbbf24" />
+          </marker>
+          <pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse">
+            <path d="M 40 0 L 0 0 0 40" fill="none" stroke="#1e293b" stroke-width="0.5"/>
+          </pattern>
+        </defs>
+
+        <rect width="100%" height="100%" fill="url(#grid)" />
+
+        <!-- arrows first -->
+        <line x1="250" y1="86" x2="250" y2="124" stroke="#22d3ee" stroke-width="1.5" marker-end="url(#arrow-cyan)"/>
+        <line x1="600" y1="86" x2="600" y2="124" stroke="#22d3ee" stroke-width="1.5" marker-end="url(#arrow-cyan)"/>
+        <line x1="950" y1="86" x2="950" y2="124" stroke="#22d3ee" stroke-width="1.5" marker-end="url(#arrow-cyan)"/>
+
+        <line x1="600" y1="176" x2="600" y2="214" stroke="#22d3ee" stroke-width="1.5" marker-end="url(#arrow-cyan)"/>
+        <text x="618" y="200" fill="#22d3ee" font-size="8">下单主链路</text>
+
+        <line x1="200" y1="176" x2="185" y2="254" stroke="#fb7185" stroke-width="1.5" stroke-dasharray="5,5" marker-end="url(#arrow-rose)"/>
+        <text x="118" y="200" fill="#fb7185" font-size="8">introspect</text>
+
+        <line x1="300" y1="380" x2="328" y2="380" stroke="#fb7185" stroke-width="1.5" stroke-dasharray="5,5" marker-end="url(#arrow-rose)"/>
+        <line x1="870" y1="380" x2="898" y2="380" stroke="#34d399" stroke-width="1.5" marker-end="url(#arrow-emerald)"/>
+
+        <line x1="600" y1="504" x2="600" y2="542" stroke="#fb923c" stroke-width="1.5" marker-end="url(#arrowhead)"/>
+
+        <line x1="240" y1="566" x2="240" y2="604" stroke="#a78bfa" stroke-width="1.5" marker-end="url(#arrow-violet)"/>
+        <line x1="600" y1="566" x2="600" y2="604" stroke="#fbbf24" stroke-width="1.5" marker-end="url(#arrow-amber)"/>
+        <line x1="960" y1="566" x2="960" y2="604" stroke="#34d399" stroke-width="1.5" marker-end="url(#arrow-emerald)"/>
+
+        <line x1="240" y1="682" x2="240" y2="720" stroke="#a78bfa" stroke-width="1.5" marker-end="url(#arrow-violet)"/>
+        <line x1="600" y1="682" x2="600" y2="720" stroke="#a78bfa" stroke-width="1.5" marker-end="url(#arrow-violet)"/>
+        <line x1="960" y1="682" x2="960" y2="720" stroke="#fb923c" stroke-width="1.5" marker-end="url(#arrowhead)"/>
+
+        <!-- clients y=30 h=56 -->
+        <rect x="90" y="30" width="320" height="56" rx="6" fill="#0f172a"/>
+        <rect x="90" y="30" width="320" height="56" rx="6" fill="rgba(8, 51, 68, 0.4)" stroke="#22d3ee" stroke-width="1.5"/>
+        <text x="250" y="52" fill="white" font-size="11" font-weight="600" text-anchor="middle">C 端 App / Web / POS</text>
+        <text x="250" y="68" fill="#94a3b8" font-size="9" text-anchor="middle">Bearer Token</text>
+
+        <rect x="440" y="30" width="320" height="56" rx="6" fill="#0f172a"/>
+        <rect x="440" y="30" width="320" height="56" rx="6" fill="rgba(8, 51, 68, 0.4)" stroke="#22d3ee" stroke-width="1.5"/>
+        <text x="600" y="52" fill="white" font-size="11" font-weight="600" text-anchor="middle">业务 BFF / OpenAPI</text>
+        <text x="600" y="68" fill="#94a3b8" font-size="9" text-anchor="middle">scene 适配</text>
+
+        <rect x="790" y="30" width="320" height="56" rx="6" fill="#0f172a"/>
+        <rect x="790" y="30" width="320" height="56" rx="6" fill="rgba(8, 51, 68, 0.4)" stroke="#22d3ee" stroke-width="1.5"/>
+        <text x="950" y="52" fill="white" font-size="11" font-weight="600" text-anchor="middle">运营后台</text>
+        <text x="950" y="68" fill="#94a3b8" font-size="9" text-anchor="middle">单据 / 补偿工单</text>
+
+        <!-- gateway y=126 h=50 -->
+        <rect x="90" y="126" width="1020" height="50" rx="6" fill="#0f172a"/>
+        <rect x="90" y="126" width="1020" height="50" rx="6" fill="rgba(136, 19, 55, 0.4)" stroke="#fb7185" stroke-width="1.5"/>
+        <text x="600" y="147" fill="white" font-size="12" font-weight="600" text-anchor="middle">API Gateway</text>
+        <text x="600" y="163" fill="#fda4af" font-size="9" text-anchor="middle">验票 · 限流 · 租户 X-Tenant-Id · Idempotency-Key · 审计</text>
+
+        <!-- peer region y=216 h=308 -->
+        <rect x="50" y="216" width="1100" height="308" rx="12" fill="rgba(251, 191, 36, 0.05)" stroke="#fbbf24" stroke-width="1" stroke-dasharray="8,4"/>
+        <text x="66" y="236" fill="#fbbf24" font-size="10" font-weight="600">交易中台平面 · 身份 / 订单编排 / 优惠 平级对接</text>
+
+        <!-- Auth -->
+        <rect x="70" y="256" width="230" height="248" rx="6" fill="#0f172a"/>
+        <rect x="70" y="256" width="230" height="248" rx="6" fill="rgba(136, 19, 55, 0.4)" stroke="#fb7185" stroke-width="1.5"/>
+        <text x="185" y="284" fill="white" font-size="12" font-weight="600" text-anchor="middle">Auth Hub</text>
+        <text x="185" y="302" fill="#fda4af" font-size="9" text-anchor="middle">用户中心 · 是谁</text>
+        <text x="185" y="332" fill="#94a3b8" font-size="9" text-anchor="middle">POST /auth/introspect</text>
+        <text x="185" y="350" fill="#e2e8f0" font-size="10" text-anchor="middle">user_id / tenant_id</text>
+        <text x="185" y="372" fill="#94a3b8" font-size="9" text-anchor="middle">多 Identity 绑定</text>
+        <text x="185" y="390" fill="#94a3b8" font-size="9" text-anchor="middle">会员属性快照</text>
+        <text x="185" y="412" fill="#94a3b8" font-size="9" text-anchor="middle">JWKS / Token 轮换</text>
+        <text x="185" y="448" fill="#fb7185" font-size="8" text-anchor="middle">不信 body.user_id</text>
+        <text x="185" y="478" fill="#64748b" font-size="8" text-anchor="middle">已有方案 · 认证中台</text>
+
+        <!-- Order Hub -->
+        <rect x="330" y="256" width="540" height="248" rx="6" fill="#0f172a"/>
+        <rect x="330" y="256" width="540" height="248" rx="6" fill="rgba(6, 78, 59, 0.35)" stroke="#34d399" stroke-width="1.5"/>
+        <text x="600" y="278" fill="white" font-size="13" font-weight="600" text-anchor="middle">Order Hub</text>
+        <text x="600" y="294" fill="#6ee7b7" font-size="9" text-anchor="middle">订单中台 · 这笔单 · /api/v1/orders</text>
+
+        <rect x="350" y="308" width="240" height="80" rx="6" fill="#0f172a"/>
+        <rect x="350" y="308" width="240" height="80" rx="6" fill="rgba(6, 78, 59, 0.4)" stroke="#34d399" stroke-width="1.5"/>
+        <text x="470" y="338" fill="white" font-size="11" font-weight="600" text-anchor="middle">State Machine</text>
+        <text x="470" y="356" fill="#94a3b8" font-size="8" text-anchor="middle">PENDING_PAY → PAID → DONE</text>
+        <text x="470" y="372" fill="#34d399" font-size="7" text-anchor="middle">条件更新 + version</text>
+
+        <rect x="610" y="308" width="240" height="80" rx="6" fill="#0f172a"/>
+        <rect x="610" y="308" width="240" height="80" rx="6" fill="rgba(6, 78, 59, 0.4)" stroke="#34d399" stroke-width="1.5"/>
+        <text x="730" y="338" fill="white" font-size="11" font-weight="600" text-anchor="middle">Amount Engine</text>
+        <text x="730" y="356" fill="#94a3b8" font-size="8" text-anchor="middle">行快照 · 分摊 · 最小单位</text>
+        <text x="730" y="372" fill="#34d399" font-size="7" text-anchor="middle">订单拥有应付决定权</text>
+
+        <rect x="350" y="404" width="240" height="80" rx="6" fill="#0f172a"/>
+        <rect x="350" y="404" width="240" height="80" rx="6" fill="rgba(6, 78, 59, 0.4)" stroke="#34d399" stroke-width="1.5"/>
+        <text x="470" y="434" fill="white" font-size="11" font-weight="600" text-anchor="middle">Saga Orchestrator</text>
+        <text x="470" y="452" fill="#94a3b8" font-size="8" text-anchor="middle">先占用后落单 · 失败补偿</text>
+        <text x="470" y="468" fill="#34d399" font-size="7" text-anchor="middle">无 2PC</text>
+
+        <rect x="610" y="404" width="240" height="80" rx="6" fill="#0f172a"/>
+        <rect x="610" y="404" width="240" height="80" rx="6" fill="rgba(6, 78, 59, 0.4)" stroke="#34d399" stroke-width="1.5"/>
+        <text x="730" y="434" fill="white" font-size="11" font-weight="600" text-anchor="middle">Scene + Outbox</text>
+        <text x="730" y="452" fill="#94a3b8" font-size="8" text-anchor="middle">mall / point / member / course</text>
+        <text x="730" y="468" fill="#34d399" font-size="7" text-anchor="middle">order.*.v1 可靠投递</text>
+
+        <!-- OfferHub -->
+        <rect x="900" y="256" width="230" height="248" rx="6" fill="#0f172a"/>
+        <rect x="900" y="256" width="230" height="248" rx="6" fill="rgba(8, 51, 68, 0.4)" stroke="#22d3ee" stroke-width="1.5"/>
+        <text x="1015" y="284" fill="white" font-size="12" font-weight="600" text-anchor="middle">OfferHub</text>
+        <text x="1015" y="302" fill="#67e8f9" font-size="9" text-anchor="middle">优惠中心 · 减多少</text>
+        <text x="1015" y="332" fill="#94a3b8" font-size="9" text-anchor="middle">/api/discount/v1</text>
+        <text x="1015" y="350" fill="#e2e8f0" font-size="10" text-anchor="middle">quotes / reservations</text>
+        <text x="1015" y="372" fill="#94a3b8" font-size="9" text-anchor="middle">commit / release / renew</text>
+        <text x="1015" y="390" fill="#94a3b8" font-size="9" text-anchor="middle">redemptions/reverse</text>
+        <text x="1015" y="412" fill="#94a3b8" font-size="9" text-anchor="middle">行级分摊 allocations</text>
+        <text x="1015" y="448" fill="#22d3ee" font-size="8" text-anchor="middle">business_order_id</text>
+        <text x="1015" y="478" fill="#64748b" font-size="8" text-anchor="middle">一期已实现</text>
+
+        <!-- event bus y=544 h=22 -->
+        <rect x="70" y="544" width="1060" height="22" rx="4" fill="rgba(251, 146, 60, 0.3)" stroke="#fb923c" stroke-width="1"/>
+        <text x="600" y="559" fill="#fb923c" font-size="8" font-weight="600" text-anchor="middle">Kafka / Outbox · order.* · discount.* · 不作为唯一事实源</text>
+
+        <!-- neighbors y=606 h=76 -->
+        <rect x="70" y="606" width="340" height="76" rx="6" fill="#0f172a"/>
+        <rect x="70" y="606" width="340" height="76" rx="6" fill="rgba(76, 29, 149, 0.4)" stroke="#a78bfa" stroke-width="1.5"/>
+        <text x="240" y="632" fill="white" font-size="11" font-weight="600" text-anchor="middle">Ledger Hub</text>
+        <text x="240" y="650" fill="#94a3b8" font-size="9" text-anchor="middle">Freeze / Capture / Release / Credit</text>
+        <text x="240" y="666" fill="#c4b5fd" font-size="8" text-anchor="middle">source=order · biz_no 幂等</text>
+
+        <rect x="430" y="606" width="340" height="76" rx="6" fill="#0f172a"/>
+        <rect x="430" y="606" width="340" height="76" rx="6" fill="rgba(120, 53, 15, 0.3)" stroke="#fbbf24" stroke-width="1.5"/>
+        <text x="600" y="632" fill="white" font-size="11" font-weight="600" text-anchor="middle">Payment Adapter</text>
+        <text x="600" y="650" fill="#94a3b8" font-size="9" text-anchor="middle">渠道意图 · 回告验签</text>
+        <text x="600" y="666" fill="#fde68a" font-size="8" text-anchor="middle">非订单内核 · 可后接支付中台</text>
+
+        <rect x="790" y="606" width="340" height="76" rx="6" fill="#0f172a"/>
+        <rect x="790" y="606" width="340" height="76" rx="6" fill="rgba(6, 78, 59, 0.4)" stroke="#34d399" stroke-width="1.5"/>
+        <text x="960" y="632" fill="white" font-size="11" font-weight="600" text-anchor="middle">Fulfillment Adapter</text>
+        <text x="960" y="650" fill="#94a3b8" font-size="9" text-anchor="middle">发货 / 权益开通 / 虚拟发放</text>
+        <text x="960" y="666" fill="#6ee7b7" font-size="8" text-anchor="middle">按 scene 插拔</text>
+
+        <!-- stores y=722 h=64 -->
+        <rect x="70" y="722" width="340" height="64" rx="6" fill="#0f172a"/>
+        <rect x="70" y="722" width="340" height="64" rx="6" fill="rgba(76, 29, 149, 0.4)" stroke="#a78bfa" stroke-width="1.5"/>
+        <text x="240" y="748" fill="white" font-size="11" font-weight="600" text-anchor="middle">PostgreSQL</text>
+        <text x="240" y="766" fill="#94a3b8" font-size="9" text-anchor="middle">orders · lines · outbox · 幂等</text>
+
+        <rect x="430" y="722" width="340" height="64" rx="6" fill="#0f172a"/>
+        <rect x="430" y="722" width="340" height="64" rx="6" fill="rgba(76, 29, 149, 0.4)" stroke="#a78bfa" stroke-width="1.5"/>
+        <text x="600" y="748" fill="white" font-size="11" font-weight="600" text-anchor="middle">Redis</text>
+        <text x="600" y="766" fill="#94a3b8" font-size="9" text-anchor="middle">Preview 快照 · 续期锁</text>
+
+        <rect x="790" y="722" width="340" height="64" rx="6" fill="#0f172a"/>
+        <rect x="790" y="722" width="340" height="64" rx="6" fill="rgba(251, 146, 60, 0.3)" stroke="#fb923c" stroke-width="1.5"/>
+        <text x="960" y="748" fill="white" font-size="11" font-weight="600" text-anchor="middle">Worker</text>
+        <text x="960" y="766" fill="#94a3b8" font-size="9" text-anchor="middle">超时关单 · 补偿 · 对账</text>
+
+        <!-- legend y=816  — below stores 786, outside all regions -->
+        <text x="70" y="824" fill="white" font-size="10" font-weight="600">Legend</text>
+        <rect x="70" y="836" width="16" height="10" rx="2" fill="rgba(8, 51, 68, 0.4)" stroke="#22d3ee" stroke-width="1"/>
+        <text x="92" y="845" fill="#94a3b8" font-size="8">Frontend / OfferHub</text>
+        <rect x="250" y="836" width="16" height="10" rx="2" fill="rgba(6, 78, 59, 0.4)" stroke="#34d399" stroke-width="1"/>
+        <text x="272" y="845" fill="#94a3b8" font-size="8">Backend / Order</text>
+        <rect x="430" y="836" width="16" height="10" rx="2" fill="rgba(136, 19, 55, 0.4)" stroke="#fb7185" stroke-width="1"/>
+        <text x="452" y="845" fill="#94a3b8" font-size="8">Security / Auth</text>
+        <rect x="610" y="836" width="16" height="10" rx="2" fill="rgba(76, 29, 149, 0.4)" stroke="#a78bfa" stroke-width="1"/>
+        <text x="632" y="845" fill="#94a3b8" font-size="8">Database / Ledger</text>
+        <rect x="790" y="836" width="16" height="10" rx="2" fill="rgba(120, 53, 15, 0.3)" stroke="#fbbf24" stroke-width="1"/>
+        <text x="812" y="845" fill="#94a3b8" font-size="8">Payment / Cloud</text>
+        <rect x="990" y="836" width="16" height="10" rx="2" fill="rgba(251, 146, 60, 0.3)" stroke="#fb923c" stroke-width="1"/>
+        <text x="1012" y="845" fill="#94a3b8" font-size="8">Message Bus</text>
+
+        <line x1="70" y1="868" x2="86" y2="868" stroke="#fb7185" stroke-width="1.5" stroke-dasharray="4,3"/>
+        <text x="92" y="871" fill="#94a3b8" font-size="8">Auth flow</text>
+        <rect x="250" y="862" width="16" height="10" rx="2" fill="transparent" stroke="#fbbf24" stroke-width="1" stroke-dasharray="4,3"/>
+        <text x="272" y="871" fill="#94a3b8" font-size="8">中台平面边界</text>
+      </svg>
+    </div>
+
+    <div class="diagram-container">
+      <div class="diagram-label">02 · Checkout Saga · 先占用后落单</div>
+      <svg viewBox="0 0 1200 520">
+        <defs>
+          <marker id="ah2" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+            <polygon points="0 0, 10 3.5, 0 7" fill="#64748b" />
+          </marker>
+          <marker id="ah2e" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+            <polygon points="0 0, 10 3.5, 0 7" fill="#34d399" />
+          </marker>
+          <marker id="ah2r" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+            <polygon points="0 0, 10 3.5, 0 7" fill="#fb7185" />
+          </marker>
+          <pattern id="grid2" width="40" height="40" patternUnits="userSpaceOnUse">
+            <path d="M 40 0 L 0 0 0 40" fill="none" stroke="#1e293b" stroke-width="0.5"/>
+          </pattern>
+        </defs>
+        <rect width="100%" height="100%" fill="url(#grid2)" />
+
+        <!-- success arrows -->
+        <line x1="196" y1="90" x2="224" y2="90" stroke="#34d399" stroke-width="1.5" marker-end="url(#ah2e)"/>
+        <line x1="384" y1="90" x2="412" y2="90" stroke="#34d399" stroke-width="1.5" marker-end="url(#ah2e)"/>
+        <line x1="572" y1="90" x2="600" y2="90" stroke="#34d399" stroke-width="1.5" marker-end="url(#ah2e)"/>
+        <line x1="760" y1="90" x2="788" y2="90" stroke="#34d399" stroke-width="1.5" marker-end="url(#ah2e)"/>
+        <line x1="948" y1="90" x2="976" y2="90" stroke="#34d399" stroke-width="1.5" marker-end="url(#ah2e)"/>
+
+        <!-- down to pay then commit -->
+        <line x1="1056" y1="136" x2="1056" y2="184" stroke="#fbbf24" stroke-width="1.5" marker-end="url(#ah2)"/>
+        <line x1="976" y1="230" x2="950" y2="230" stroke="#34d399" stroke-width="1.5" marker-end="url(#ah2e)"/>
+        <line x1="788" y1="230" x2="762" y2="230" stroke="#34d399" stroke-width="1.5" marker-end="url(#ah2e)"/>
+
+        <!-- row1 y=40 h=96 -->
+        <rect x="36" y="40" width="160" height="96" rx="6" fill="#0f172a"/>
+        <rect x="36" y="40" width="160" height="96" rx="6" fill="rgba(8, 51, 68, 0.4)" stroke="#22d3ee" stroke-width="1.5"/>
+        <text x="116" y="64" fill="#22d3ee" font-size="8" font-weight="600" text-anchor="middle">1  AUTH + PREVIEW</text>
+        <text x="116" y="86" fill="white" font-size="11" font-weight="600" text-anchor="middle">验票 + 试算</text>
+        <text x="116" y="104" fill="#94a3b8" font-size="8" text-anchor="middle">introspect · quotes</text>
+        <text x="116" y="118" fill="#64748b" font-size="7" text-anchor="middle">不落单 · 不占资源</text>
+
+        <rect x="224" y="40" width="160" height="96" rx="6" fill="#0f172a"/>
+        <rect x="224" y="40" width="160" height="96" rx="6" fill="rgba(8, 51, 68, 0.4)" stroke="#22d3ee" stroke-width="1.5"/>
+        <text x="304" y="64" fill="#22d3ee" font-size="8" font-weight="600" text-anchor="middle">2  OFFER</text>
+        <text x="304" y="86" fill="white" font-size="11" font-weight="600" text-anchor="middle">Reserve 优惠</text>
+        <text x="304" y="104" fill="#94a3b8" font-size="8" text-anchor="middle">券 / 预算 / 次数</text>
+        <text x="304" y="118" fill="#64748b" font-size="7" text-anchor="middle">business_order_id</text>
+
+        <rect x="412" y="40" width="160" height="96" rx="6" fill="#0f172a"/>
+        <rect x="412" y="40" width="160" height="96" rx="6" fill="rgba(76, 29, 149, 0.4)" stroke="#a78bfa" stroke-width="1.5"/>
+        <text x="492" y="64" fill="#c4b5fd" font-size="8" font-weight="600" text-anchor="middle">3  LEDGER</text>
+        <text x="492" y="86" fill="white" font-size="11" font-weight="600" text-anchor="middle">Freeze 资产</text>
+        <text x="492" y="104" fill="#94a3b8" font-size="8" text-anchor="middle">POINT / BALANCE</text>
+        <text x="492" y="118" fill="#64748b" font-size="7" text-anchor="middle">order:freeze:{id}</text>
+
+        <rect x="600" y="40" width="160" height="96" rx="6" fill="#0f172a"/>
+        <rect x="600" y="40" width="160" height="96" rx="6" fill="rgba(6, 78, 59, 0.4)" stroke="#34d399" stroke-width="1.5"/>
+        <text x="680" y="64" fill="#6ee7b7" font-size="8" font-weight="600" text-anchor="middle">4  ORDER DB</text>
+        <text x="680" y="86" fill="white" font-size="11" font-weight="600" text-anchor="middle">落单 PENDING_PAY</text>
+        <text x="680" y="104" fill="#94a3b8" font-size="8" text-anchor="middle">金额快照 + Outbox</text>
+        <text x="680" y="118" fill="#64748b" font-size="7" text-anchor="middle">本地事务</text>
+
+        <rect x="788" y="40" width="160" height="96" rx="6" fill="#0f172a"/>
+        <rect x="788" y="40" width="160" height="96" rx="6" fill="rgba(6, 78, 59, 0.4)" stroke="#34d399" stroke-width="1.5"/>
+        <text x="868" y="64" fill="#6ee7b7" font-size="8" font-weight="600" text-anchor="middle">5  INVENTORY</text>
+        <text x="868" y="86" fill="white" font-size="11" font-weight="600" text-anchor="middle">履约预占</text>
+        <text x="868" y="104" fill="#94a3b8" font-size="8" text-anchor="middle">可空实现</text>
+        <text x="868" y="118" fill="#64748b" font-size="7" text-anchor="middle">按 scene</text>
+
+        <rect x="976" y="40" width="160" height="96" rx="6" fill="#0f172a"/>
+        <rect x="976" y="40" width="160" height="96" rx="6" fill="rgba(120, 53, 15, 0.3)" stroke="#fbbf24" stroke-width="1.5"/>
+        <text x="1056" y="64" fill="#fde68a" font-size="8" font-weight="600" text-anchor="middle">6  PAY</text>
+        <text x="1056" y="86" fill="white" font-size="11" font-weight="600" text-anchor="middle">支付意图</text>
+        <text x="1056" y="104" fill="#94a3b8" font-size="8" text-anchor="middle">渠道 / 纯账本</text>
+        <text x="1056" y="118" fill="#64748b" font-size="7" text-anchor="middle">回告验签</text>
+
+        <!-- row2 paid path y=184 h=92 -->
+        <rect x="976" y="184" width="160" height="92" rx="6" fill="#0f172a"/>
+        <rect x="976" y="184" width="160" height="92" rx="6" fill="rgba(6, 78, 59, 0.4)" stroke="#34d399" stroke-width="1.5"/>
+        <text x="1056" y="210" fill="#6ee7b7" font-size="8" font-weight="600" text-anchor="middle">7  PAID</text>
+        <text x="1056" y="232" fill="white" font-size="11" font-weight="600" text-anchor="middle">条件更新状态</text>
+        <text x="1056" y="250" fill="#94a3b8" font-size="8" text-anchor="middle">拒绝与关单并发覆盖</text>
+
+        <rect x="788" y="184" width="160" height="92" rx="6" fill="#0f172a"/>
+        <rect x="788" y="184" width="160" height="92" rx="6" fill="rgba(8, 51, 68, 0.4)" stroke="#22d3ee" stroke-width="1.5"/>
+        <text x="868" y="210" fill="#67e8f9" font-size="8" font-weight="600" text-anchor="middle">8  COMMIT</text>
+        <text x="868" y="232" fill="white" font-size="11" font-weight="600" text-anchor="middle">核销优惠</text>
+        <text x="868" y="250" fill="#94a3b8" font-size="8" text-anchor="middle">reservation → redeemed</text>
+
+        <rect x="412" y="184" width="348" height="92" rx="6" fill="#0f172a"/>
+        <rect x="412" y="184" width="348" height="92" rx="6" fill="rgba(76, 29, 149, 0.4)" stroke="#a78bfa" stroke-width="1.5"/>
+        <text x="586" y="210" fill="#c4b5fd" font-size="8" font-weight="600" text-anchor="middle">9  CAPTURE + FULFILL</text>
+        <text x="586" y="232" fill="white" font-size="11" font-weight="600" text-anchor="middle">账本确认扣减 + 履约提交</text>
+        <text x="586" y="250" fill="#94a3b8" font-size="8" text-anchor="middle">失败停在 PAID，Worker 补单，禁止当取消</text>
+
+        <!-- compensate region y=328 -->
+        <rect x="36" y="308" width="1100" height="140" rx="12" fill="transparent" stroke="#fb7185" stroke-width="1" stroke-dasharray="4,4"/>
+        <text x="52" y="328" fill="#fb7185" font-size="9" font-weight="600">失败补偿 · 逆序幂等</text>
+
+        <rect x="224" y="348" width="160" height="80" rx="6" fill="#0f172a"/>
+        <rect x="224" y="348" width="160" height="80" rx="6" fill="rgba(136, 19, 55, 0.4)" stroke="#fb7185" stroke-width="1.5"/>
+        <text x="304" y="376" fill="white" font-size="11" font-weight="600" text-anchor="middle">release 优惠</text>
+        <text x="304" y="394" fill="#fda4af" font-size="8" text-anchor="middle">order:{id}:release</text>
+        <text x="304" y="410" fill="#64748b" font-size="7" text-anchor="middle">超时关单同样走这里</text>
+
+        <rect x="412" y="348" width="160" height="80" rx="6" fill="#0f172a"/>
+        <rect x="412" y="348" width="160" height="80" rx="6" fill="rgba(136, 19, 55, 0.4)" stroke="#fb7185" stroke-width="1.5"/>
+        <text x="492" y="376" fill="white" font-size="11" font-weight="600" text-anchor="middle">Release 账本</text>
+        <text x="492" y="394" fill="#fda4af" font-size="8" text-anchor="middle">order:release:{id}</text>
+        <text x="492" y="410" fill="#64748b" font-size="7" text-anchor="middle">frozen → available</text>
+
+        <rect x="600" y="348" width="160" height="80" rx="6" fill="#0f172a"/>
+        <rect x="600" y="348" width="160" height="80" rx="6" fill="rgba(136, 19, 55, 0.4)" stroke="#fb7185" stroke-width="1.5"/>
+        <text x="680" y="376" fill="white" font-size="11" font-weight="600" text-anchor="middle">不落单 / 标失败</text>
+        <text x="680" y="394" fill="#fda4af" font-size="8" text-anchor="middle">无幽灵 PENDING 单</text>
+        <text x="680" y="410" fill="#64748b" font-size="7" text-anchor="middle">落库失败再补偿释放</text>
+
+        <rect x="788" y="348" width="328" height="80" rx="6" fill="#0f172a"/>
+        <rect x="788" y="348" width="328" height="80" rx="6" fill="rgba(136, 19, 55, 0.4)" stroke="#fb7185" stroke-width="1.5"/>
+        <text x="952" y="376" fill="white" font-size="11" font-weight="600" text-anchor="middle">售后：reverse + Credit</text>
+        <text x="952" y="394" fill="#fda4af" font-size="8" text-anchor="middle">按原分摊退，不重跑当前规则</text>
+        <text x="952" y="410" fill="#64748b" font-size="7" text-anchor="middle">refund_id 新幂等键</text>
+
+        <text x="600" y="478" fill="#64748b" font-size="8" text-anchor="middle">与 OfferHub / Ledger Hub 均无分布式事务 · 同步拿占用结果 · 异步只发已发生事实</text>
+      </svg>
+    </div>
+
+    <div class="diagram-container">
+      <div class="diagram-label">03 · 订单状态机</div>
+      <svg viewBox="0 0 1200 420">
+        <defs>
+          <marker id="ah3" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+            <polygon points="0 0, 10 3.5, 0 7" fill="#34d399" />
+          </marker>
+          <marker id="ah3r" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+            <polygon points="0 0, 10 3.5, 0 7" fill="#fb7185" />
+          </marker>
+          <marker id="ah3a" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+            <polygon points="0 0, 10 3.5, 0 7" fill="#fbbf24" />
+          </marker>
+          <pattern id="grid3" width="40" height="40" patternUnits="userSpaceOnUse">
+            <path d="M 40 0 L 0 0 0 40" fill="none" stroke="#1e293b" stroke-width="0.5"/>
+          </pattern>
+        </defs>
+        <rect width="100%" height="100%" fill="url(#grid3)" />
+
+        <line x1="230" y1="90" x2="278" y2="90" stroke="#34d399" stroke-width="1.5" marker-end="url(#ah3)"/>
+        <line x1="470" y1="90" x2="518" y2="90" stroke="#34d399" stroke-width="1.5" marker-end="url(#ah3)"/>
+        <line x1="710" y1="90" x2="758" y2="90" stroke="#34d399" stroke-width="1.5" marker-end="url(#ah3)"/>
+        <line x1="134" y1="136" x2="134" y2="198" stroke="#fb7185" stroke-width="1.5" marker-end="url(#ah3r)"/>
+        <line x1="374" y1="136" x2="374" y2="198" stroke="#fbbf24" stroke-width="1.5" marker-end="url(#ah3a)"/>
+        <line x1="854" y1="136" x2="854" y2="198" stroke="#fbbf24" stroke-width="1.5" marker-end="url(#ah3a)"/>
+        <line x1="470" y1="244" x2="518" y2="244" stroke="#fbbf24" stroke-width="1.5" marker-end="url(#ah3a)"/>
+        <line x1="710" y1="244" x2="758" y2="244" stroke="#fbbf24" stroke-width="1.5" marker-end="url(#ah3a)"/>
+        <path d="M 470 44 C 580 12, 700 12, 760 44" fill="none" stroke="#34d399" stroke-width="1.2" stroke-dasharray="5,4" marker-end="url(#ah3)"/>
+        <text x="615" y="24" fill="#34d399" font-size="8" text-anchor="middle">auto_complete 跳过履约</text>
+        <text x="254" y="82" fill="#6ee7b7" font-size="7">支付成功</text>
+        <text x="494" y="82" fill="#6ee7b7" font-size="7">需履约</text>
+        <text x="734" y="82" fill="#6ee7b7" font-size="7">履约完成</text>
+        <text x="148" y="172" fill="#fb7185" font-size="7">超时/取消</text>
+        <text x="388" y="172" fill="#fbbf24" font-size="7">售后</text>
+        <text x="868" y="172" fill="#fbbf24" font-size="7">售后</text>
+
+        <rect x="40" y="44" width="190" height="92" rx="6" fill="#0f172a"/>
+        <rect x="40" y="44" width="190" height="92" rx="6" fill="rgba(120, 53, 15, 0.3)" stroke="#fbbf24" stroke-width="1.5"/>
+        <text x="135" y="78" fill="white" font-size="12" font-weight="600" text-anchor="middle">PENDING_PAY</text>
+        <text x="135" y="98" fill="#94a3b8" font-size="8" text-anchor="middle">券已锁 · 资产已冻</text>
+        <text x="135" y="114" fill="#fde68a" font-size="7" text-anchor="middle">expire_at 对齐 reservation</text>
+
+        <rect x="280" y="44" width="190" height="92" rx="6" fill="#0f172a"/>
+        <rect x="280" y="44" width="190" height="92" rx="6" fill="rgba(6, 78, 59, 0.4)" stroke="#34d399" stroke-width="1.5"/>
+        <text x="375" y="78" fill="white" font-size="12" font-weight="600" text-anchor="middle">PAID</text>
+        <text x="375" y="98" fill="#94a3b8" font-size="8" text-anchor="middle">commit + Capture</text>
+        <text x="375" y="114" fill="#6ee7b7" font-size="7" text-anchor="middle">失败则补单，不可关单</text>
+
+        <rect x="520" y="44" width="190" height="92" rx="6" fill="#0f172a"/>
+        <rect x="520" y="44" width="190" height="92" rx="6" fill="rgba(6, 78, 59, 0.4)" stroke="#34d399" stroke-width="1.5"/>
+        <text x="615" y="78" fill="white" font-size="12" font-weight="600" text-anchor="middle">FULFILLING</text>
+        <text x="615" y="98" fill="#94a3b8" font-size="8" text-anchor="middle">发货 / 开通权益</text>
+        <text x="615" y="114" fill="#6ee7b7" font-size="7" text-anchor="middle">scene 可跳过本态</text>
+
+        <rect x="760" y="44" width="190" height="92" rx="6" fill="#0f172a"/>
+        <rect x="760" y="44" width="190" height="92" rx="6" fill="rgba(6, 78, 59, 0.4)" stroke="#34d399" stroke-width="1.5"/>
+        <text x="855" y="78" fill="white" font-size="12" font-weight="600" text-anchor="middle">COMPLETED</text>
+        <text x="855" y="98" fill="#94a3b8" font-size="8" text-anchor="middle">终态（可售后）</text>
+        <text x="855" y="114" fill="#6ee7b7" font-size="7" text-anchor="middle">order.completed.v1</text>
+
+        <rect x="40" y="200" width="190" height="88" rx="6" fill="#0f172a"/>
+        <rect x="40" y="200" width="190" height="88" rx="6" fill="rgba(136, 19, 55, 0.4)" stroke="#fb7185" stroke-width="1.5"/>
+        <text x="135" y="234" fill="white" font-size="12" font-weight="600" text-anchor="middle">CANCELLED</text>
+        <text x="135" y="254" fill="#fda4af" font-size="8" text-anchor="middle">release + Release</text>
+        <text x="135" y="270" fill="#94a3b8" font-size="7" text-anchor="middle">仅 PENDING_PAY 可入</text>
+
+        <rect x="280" y="200" width="190" height="88" rx="6" fill="#0f172a"/>
+        <rect x="280" y="200" width="190" height="88" rx="6" fill="rgba(120, 53, 15, 0.3)" stroke="#fbbf24" stroke-width="1.5"/>
+        <text x="375" y="234" fill="white" font-size="12" font-weight="600" text-anchor="middle">REFUNDING</text>
+        <text x="375" y="254" fill="#fde68a" font-size="8" text-anchor="middle">渠道退 + Credit</text>
+        <text x="375" y="270" fill="#94a3b8" font-size="7" text-anchor="middle">按原 allocations</text>
+
+        <rect x="520" y="200" width="190" height="88" rx="6" fill="#0f172a"/>
+        <rect x="520" y="200" width="190" height="88" rx="6" fill="rgba(120, 53, 15, 0.3)" stroke="#fbbf24" stroke-width="1.5"/>
+        <text x="615" y="234" fill="white" font-size="12" font-weight="600" text-anchor="middle">PARTIAL_REFUNDED</text>
+        <text x="615" y="254" fill="#fde68a" font-size="8" text-anchor="middle">部分 reverse</text>
+        <text x="615" y="270" fill="#94a3b8" font-size="7" text-anchor="middle">可再次售后</text>
+
+        <rect x="760" y="200" width="190" height="88" rx="6" fill="#0f172a"/>
+        <rect x="760" y="200" width="190" height="88" rx="6" fill="rgba(136, 19, 55, 0.4)" stroke="#fb7185" stroke-width="1.5"/>
+        <text x="855" y="234" fill="white" font-size="12" font-weight="600" text-anchor="middle">REFUNDED</text>
+        <text x="855" y="254" fill="#fda4af" font-size="8" text-anchor="middle">全额退完</text>
+        <text x="855" y="270" fill="#94a3b8" font-size="7" text-anchor="middle">order.refunded.v1</text>
+
+        <rect x="40" y="328" width="1120" height="60" rx="6" fill="#0f172a"/>
+        <rect x="40" y="328" width="1120" height="60" rx="6" fill="rgba(30, 41, 59, 0.5)" stroke="#94a3b8" stroke-width="1.5"/>
+        <text x="600" y="352" fill="white" font-size="11" font-weight="600" text-anchor="middle">迁移铁律：UPDATE … WHERE status=? AND version=? · 支付回调与超时关单以条件更新赢家为准</text>
+        <text x="600" y="370" fill="#94a3b8" font-size="9" text-anchor="middle">已 PAID 的取消请求返回 ORDER_ALREADY_PAID · commit 失败不得把已收款订单打成 CANCELLED</text>
+      </svg>
+    </div>
+
+    <div class="cards">
+      <div class="card">
+        <div class="card-header">
+          <div class="card-dot emerald"></div>
+          <h3>订单管什么</h3>
+        </div>
+        <ul>
+          <li>• 单据、状态机、金额快照、幂等</li>
+          <li>• Saga：优惠占用 → 账本冻结 → 落单 → 支付</li>
+          <li>• scene 插件：商城 / 积分 / 会员 / 课程</li>
+          <li>• 事件与超时关单、售后编排</li>
+        </ul>
+      </div>
+      <div class="card">
+        <div class="card-header">
+          <div class="card-dot cyan"></div>
+          <h3>怎么对接已有系统</h3>
+        </div>
+        <ul>
+          <li>• Auth：introspect → user_id，不信 body</li>
+          <li>• OfferHub：quote / reserve / commit / reverse</li>
+          <li>• Ledger：Freeze / Capture / Release / Credit</li>
+          <li>• 同一 tenant、最小金额单位、trace_id</li>
+        </ul>
+      </div>
+      <div class="card">
+        <div class="card-header">
+          <div class="card-dot rose"></div>
+          <h3>明确不做</h3>
+        </div>
+        <ul>
+          <li>• 不做登录、优惠规则、余额内核</li>
+          <li>• 不做渠道路由与仓配主数据</li>
+          <li>• 不做 2PC；失败靠幂等补偿</li>
+          <li>• 不让 C 端直接改 PAID</li>
+        </ul>
+      </div>
+    </div>
+
+    <p class="footer">
+      Order Hub · 草案 v0.1 · 对接 Auth Hub / OfferHub / Ledger Hub · docs/通用订单中台技术方案.md
+    </p>
+  </div>
+
+  <script>
+    async function copyAsImage(btn) {
+      const orig = btn.textContent;
+      try {
+        const el = document.getElementById('report-container');
+        const r = el.getBoundingClientRect();
+        const pad = 32;
+        const canvas = await html2canvas(document.body, { backgroundColor: '#020617', scale: 2, useCORS: true, ignoreElements: (e) => e.classList && e.classList.contains('toolbar'), x: r.left + window.scrollX - pad, y: r.top + window.scrollY - pad, width: r.width + pad * 2, height: r.height + pad * 2 });
+        const blob = await new Promise(r => canvas.toBlob(r, 'image/png'));
+        await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]);
+        btn.textContent = '✓ Copied!';
+      } catch (e) {
+        btn.textContent = '✗ Failed';
+      }
+      setTimeout(() => btn.textContent = orig, 2000);
+    }
+
+    async function downloadPNG(btn) {
+      const orig = btn.textContent;
+      btn.textContent = '⏳ ...';
+      try {
+        const el = document.getElementById('report-container');
+        const r = el.getBoundingClientRect();
+        const pad = 32;
+        const canvas = await html2canvas(document.body, { backgroundColor: '#020617', scale: 2, useCORS: true, ignoreElements: (e) => e.classList && e.classList.contains('toolbar'), x: r.left + window.scrollX - pad, y: r.top + window.scrollY - pad, width: r.width + pad * 2, height: r.height + pad * 2 });
+        const link = document.createElement('a');
+        link.download = 'diagram.png';
+        link.href = canvas.toDataURL('image/png');
+        link.click();
+        btn.textContent = '✓ Done!';
+      } catch (e) {
+        btn.textContent = '✗ Failed';
+      }
+      setTimeout(() => btn.textContent = orig, 2000);
+    }
+
+    async function downloadPDF(btn) {
+      const orig = btn.textContent;
+      btn.textContent = '⏳ ...';
+      try {
+        const el = document.getElementById('report-container');
+        const r = el.getBoundingClientRect();
+        const pad = 32;
+        const canvas = await html2canvas(document.body, { backgroundColor: '#020617', scale: 2, useCORS: true, ignoreElements: (e) => e.classList && e.classList.contains('toolbar'), x: r.left + window.scrollX - pad, y: r.top + window.scrollY - pad, width: r.width + pad * 2, height: r.height + pad * 2 });
+        const imgData = canvas.toDataURL('image/png');
+        const { jsPDF } = window.jspdf;
+        const orientation = canvas.width > canvas.height ? 'landscape' : 'portrait';
+        const pdf = new jsPDF({ orientation, unit: 'px', format: [canvas.width, canvas.height], hotfixes: ['px_scaling'] });
+        pdf.addImage(imgData, 'PNG', 0, 0, canvas.width, canvas.height);
+        pdf.save('diagram.pdf');
+        btn.textContent = '✓ Done!';
+      } catch (e) {
+        btn.textContent = '✗ Failed';
+      }
+      setTimeout(() => btn.textContent = orig, 2000);
+    }
+  </script>
+</body>
+</html>

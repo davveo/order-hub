@@ -1,0 +1,137 @@
+openapi: 3.0.3
+info:
+  title: Order Hub API
+  version: 0.1.0
+servers:
+  - url: /
+paths:
+  /api/v1/orders/preview:
+    post:
+      summary: Preview
+      security: [{bearerAuth: []}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PreviewRequest'
+      responses:
+        '200':
+          description: ok
+  /api/v1/orders:
+    post:
+      summary: Checkout
+      security: [{bearerAuth: []}]
+      parameters:
+        - in: header
+          name: Idempotency-Key
+          schema: {type: string}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CheckoutRequest'
+      responses:
+        '200':
+          description: ok
+    get:
+      summary: List orders
+      security: [{bearerAuth: []}]
+      parameters:
+        - in: query
+          name: status
+          schema: {type: string}
+        - in: query
+          name: scene
+          schema: {type: string}
+        - in: query
+          name: cursor
+          schema: {type: string}
+      responses:
+        '200':
+          description: ok
+  /api/v1/orders/{order_id}:
+    get:
+      summary: Get order
+      security: [{bearerAuth: []}]
+      parameters:
+        - in: path
+          name: order_id
+          required: true
+          schema: {type: string}
+      responses:
+        '200':
+          description: ok
+  /api/v1/orders/{order_id}/cancel:
+    post:
+      summary: Cancel
+      security: [{bearerAuth: []}]
+      parameters:
+        - in: path
+          name: order_id
+          required: true
+          schema: {type: string}
+      responses:
+        '200':
+          description: ok
+  /internal/v1/orders/callbacks/payment:
+    post:
+      summary: Payment callback
+      responses:
+        '200':
+          description: ok
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+  schemas:
+    PreviewRequest:
+      type: object
+      required: [scene, items]
+      properties:
+        scene: {type: string}
+        channel: {type: string}
+        coupon_ids:
+          type: array
+          items: {type: string}
+        auto_best: {type: boolean}
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/Line'
+        ledger_pay:
+          $ref: '#/components/schemas/LedgerPay'
+    CheckoutRequest:
+      type: object
+      required: [client_order_id, scene]
+      properties:
+        client_order_id: {type: string}
+        scene: {type: string}
+        channel: {type: string}
+        quote_id: {type: string}
+        coupon_ids:
+          type: array
+          items: {type: string}
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/Line'
+        pay_method: {type: string, enum: [channel, ledger, mix]}
+        ledger_pay:
+          $ref: '#/components/schemas/LedgerPay'
+    Line:
+      type: object
+      required: [line_id, object_type, object_id, quantity, unit_price]
+      properties:
+        line_id: {type: string}
+        object_type: {type: string}
+        object_id: {type: string}
+        quantity: {type: integer, format: int64}
+        unit_price: {type: integer, format: int64}
+    LedgerPay:
+      type: object
+      properties:
+        asset_code: {type: string}
+        amount: {type: integer, format: int64}
